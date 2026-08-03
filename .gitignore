@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+
+# Generated data
+generated_data/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Python cache
+.pytest_cache/
+.mypy_cache/
+
+# Airflow runtime
+airflow/*.db
+airflow/*.pid
+
+# Environment
+.env
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Runtime metadata
+logs/processed_files.txt
+logs/processed_tables.json
+logs/schema.json
+logs/watermark.json
+
+# Airflow runtime
+airflow/airflow.db
+airflow/*.pid
+
+# Generated data
+generated_data/
+
+# Zip package
+utils.zip
