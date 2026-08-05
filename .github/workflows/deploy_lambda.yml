@@ -55,10 +55,14 @@ jobs:
           
           echo "LAYER_ARN=$LAYER_ARN" >> $GITHUB_ENV
 
-      - name: Wait for RDS Lambda update
+      - name: Deploy RDS Lambda
         run: |
-          aws lambda wait function-updated \
-            --function-name rds_to_bronze
+          aws lambda update-function-code \
+            --function-name rds_to_bronze \
+            --zip-file fileb://rds_to_bronze.zip
+
+      - name: Wait for RDS Lambda update
+        run: sleep 30
 
       - name: Deploy RDS Lambda
         run: |
