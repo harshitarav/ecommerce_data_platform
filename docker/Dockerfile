@@ -1,7 +1,12 @@
-FROM public.ecr.aws/lambda/python:3.11
+FROM amazonlinux:2023
+
+RUN dnf install -y \
+    python3 \
+    python3-pip \
+    zip
 
 WORKDIR /build
 
-RUN yum install -y zip
+COPY . .
 
 CMD ["/bin/bash"]
