@@ -39,17 +39,20 @@ jobs:
             -v ${{ github.workspace }}:/build \
             lambda-builder \
             bash /build/scripts/build_layer.sh
+          
+      - name: Upload Layer to S3
+        run: |
+          aws s3 cp layer/layer.zip s3://e-commerce-de-project/layer.zip
 
       - name: Publish Lambda Layer
-        id: publish_layer
         run: |
           LAYER_ARN=$(aws lambda publish-layer-version \
             --layer-name ecommerce-dependencies \
-            --zip-file fileb://layer/layer.zip \
+            --content S3Bucket=e-commerce-de-project,S3Key=layer.zip \
             --compatible-runtimes python3.11 \
-            --query LayerVersionArn \
+            --query 'LayerVersionArn' \
             --output text)
-
+          
           echo "LAYER_ARN=$LAYER_ARN" >> $GITHUB_ENV
 
       - name: Deploy RDS Lambda
