@@ -25,25 +25,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Check Docker Python Version
-        run: |
-          docker run --rm \
-            lambda-builder \
-            python3 --version
-          
-          docker run --rm \
-            lambda-builder \
-            python3 -c "import sys; print(sys.version)"
-
-      - name: Check Pip
-        run: |
-          docker run --rm \
-            lambda-builder \
-            pip3 --version
-
       - name: Build Lambda Packages
         run: |
           docker build -t lambda-builder -f docker/Dockerfile .
+          
+          echo "===== PYTHON VERSION ====="
+          docker run --rm lambda-builder python3 --version
+          docker run --rm lambda-builder python3 -c "import sys; print(sys.version)"
+          docker run --rm lambda-builder pip3 --version
+          
           docker run --rm \
             -v ${{ github.workspace }}:/build \
             lambda-builder \
