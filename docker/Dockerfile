@@ -1,8 +1,6 @@
-FROM amazonlinux:2023
+FROM public.ecr.aws/lambda/python:3.11
 
 RUN dnf install -y \
-    python3 \
-    python3-pip \
     zip \
     findutils
 
