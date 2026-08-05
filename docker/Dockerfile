@@ -12,6 +12,11 @@
 
 FROM public.ecr.aws/lambda/python:3.11
 
+RUN microdnf install -y \
+    zip \
+    findutils \
+ && microdnf clean all
+
 WORKDIR /build
 
 COPY . .
