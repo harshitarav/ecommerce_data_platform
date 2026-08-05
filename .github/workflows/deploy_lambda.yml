@@ -40,6 +40,15 @@ jobs:
             lambda-builder \
             bash /build/scripts/build_layer.sh
           
+      - name: Debug Layer Contents
+        run: |
+          ls -R layer/python | head -200
+
+      - name: Debug NumPy
+        run: |
+          ls -la layer/python | grep numpy || true
+          find layer/python -maxdepth 2 -name "numpy*" || true
+          
       - name: Upload Layer to S3
         run: |
           aws s3 cp layer/layer.zip s3://e-commerce-de-project/layer.zip
