@@ -46,10 +46,10 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name rds_to_bronze \
-            --zip-file fileb://deployment/rds_to_bronze.zip
+            --zip-file fileb://rds_to_bronze.zip
 
       - name: Deploy External Files Lambda
         run: |
           aws lambda update-function-code \
             --function-name external_files_to_bronze \
-            --zip-file fileb://deployment/external_files_to_bronze.zip
+            --zip-file fileb://external_files_to_bronze.zip
