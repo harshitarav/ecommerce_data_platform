@@ -1,0 +1,9 @@
+[
+    "customers",
+    "orders",
+    "products",
+    "payments",
+    "reviews",
+    "sellers",
+    "order_items"
+]

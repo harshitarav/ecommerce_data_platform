@@ -1,0 +1,55 @@
+name: Deploy Lambda Functions
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS Credentials
+
+        uses: aws-actions/configure-aws-credentials@v4
+
+        with:
+
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Build Lambda Packages
+        run: |
+          docker build -t lambda-builder -f docker/Dockerfile .
+          docker run --rm \
+            -v ${{ github.workspace }}:/build \
+            lambda-builder \
+            bash /build/scripts/build_lambda.sh
+
+      - name: Deploy RDS Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name rds_to_bronze \
+            --zip-file fileb://deployment/rds_to_bronze.zip
+
+      - name: Deploy External Files Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name external_files_to_bronze \
+            --zip-file fileb://deployment/external_files_to_bronze.zip

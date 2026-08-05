@@ -1,0 +1,37 @@
+{
+    "customers": {
+        "primary_key": "customer_id",
+        "incremental_column": "updated_at",
+        "load_type": "incremental"
+    },
+    "orders": {
+        "primary_key": "order_id",
+        "incremental_column": "updated_at",
+        "load_type": "incremental"
+    },
+    "payments": {
+        "primary_key": "order_id",
+        "incremental_column": "updated_at",
+        "load_type": "incremental"
+    },
+    "products": {
+        "primary_key": "product_id",
+        "incremental_column": "updated_at",
+        "load_type": "incremental"
+    },
+    "reviews": {
+        "primary_key": "review_id",
+        "incremental_column": "updated_at",
+        "load_type": "incremental"
+    },
+    "sellers": {
+        "primary_key": "seller_id",
+        "incremental_column": "updated_at",
+        "load_type": "incremental"
+    },
+    "order_items": {
+        "primary_key": "order_item_id",
+        "incremental_column": "created_at",
+        "load_type": "incremental"
+    }
+}

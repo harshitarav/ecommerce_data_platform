@@ -1,0 +1,78 @@
+{
+  "tables": {
+    "fact_sales": {
+      "not_null_columns": [
+        "order_id",
+        "customer_id",
+        "product_id",
+        "seller_id",
+        "purchase_year",
+        "purchase_month"
+      ]
+    },
+    "fact_payments": {
+      "not_null_columns": [
+        "order_id",
+        "customer_id",
+        "payment_type",
+        "purchase_year",
+        "purchase_month"
+      ]
+    },
+    "dim_customer": {
+      "not_null_columns": [
+        "customer_id"
+      ]
+    },
+    "dim_product": {
+      "not_null_columns": [
+        "product_id"
+      ]
+    },
+    "dim_seller": {
+      "not_null_columns": [
+        "seller_id"
+      ]
+    },
+    "dim_inventory": {
+      "not_null_columns": [
+        "inventory_id",
+        "warehouse_id",
+        "product_id"
+      ]
+    }
+  },
+  "business_rules": {
+    "total_order_value": {
+      "min": 0
+    },
+    "payment_value": {
+      "min": 0
+    },
+    "delivery_days": {
+      "min": 0
+    },
+    "purchase_year": {
+      "min": 2016,
+      "max": 2018
+    },
+    "review_score": {
+      "allowed_values": [1, 2, 3, 4, 5]
+    },
+    "late_delivery_flag": {
+      "allowed_values": [
+        "Yes",
+        "No",
+        "Pending"
+      ]
+    },
+    "review_category": {
+      "allowed_values": [
+        "Good",
+        "Average",
+        "Poor",
+        "No Review"
+      ]
+    }
+  }
+}
