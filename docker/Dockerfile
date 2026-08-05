@@ -1,8 +1,16 @@
-FROM public.ecr.aws/lambda/python:3.11
+#FROM public.ecr.aws/lambda/python:3.11
+#
+#RUN dnf install -y \
+#    zip \
+#    findutils
+#
+#WORKDIR /build
+#
+#COPY . .
+#
+#CMD ["/bin/bash"]
 
-RUN dnf install -y \
-    zip \
-    findutils
+FROM public.ecr.aws/lambda/python:3.11
 
 WORKDIR /build
 
