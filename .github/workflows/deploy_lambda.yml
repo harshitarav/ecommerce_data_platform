@@ -55,6 +55,11 @@ jobs:
           
           echo "LAYER_ARN=$LAYER_ARN" >> $GITHUB_ENV
 
+      - name: Wait for RDS Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name rds_to_bronze
+
       - name: Deploy RDS Lambda
         run: |
           aws lambda update-function-code \
@@ -72,6 +77,11 @@ jobs:
           aws lambda update-function-code \
             --function-name external_files_to_bronze \
             --zip-file fileb://external_files_to_bronze.zip
+
+      - name: Wait for External Files Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name external_files_to_bronze
 
       - name: Attach Layer to External Files Lambda
         run: |
