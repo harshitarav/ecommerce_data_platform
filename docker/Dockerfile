@@ -16,4 +16,6 @@ WORKDIR /build
 
 COPY . .
 
+ENTRYPOINT []
+
 CMD ["/bin/bash"]
