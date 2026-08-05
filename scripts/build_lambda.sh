@@ -7,27 +7,27 @@ echo "Building Lambda Packages..."
 for FUNCTION in rds_to_bronze external_files_to_bronze
 do
 
-    PACKAGE_DIR="deployment/$FUNCTION"
+    BUILD_DIR="build/$FUNCTION"
 
-    rm -rf $PACKAGE_DIR
+    rm -rf "$BUILD_DIR"
 
-    mkdir -p $PACKAGE_DIR
+    mkdir -p "$BUILD_DIR"
 
     pip install \
         -r deployment/$FUNCTION/requirements.txt \
-        -t $PACKAGE_DIR
+        -t "$BUILD_DIR"
 
-    cp -r common $PACKAGE_DIR/
+    cp -r deployment/$FUNCTION/common "$BUILD_DIR/"
 
-    cp -r config $PACKAGE_DIR/
+    cp -r deployment/$FUNCTION/config "$BUILD_DIR/"
 
-    cp -r logs $PACKAGE_DIR/
+    cp -r deployment/$FUNCTION/logs "$BUILD_DIR/"
 
-    cp deployment/$FUNCTION/lambda_function.py $PACKAGE_DIR/
+    cp deployment/$FUNCTION/lambda_function.py "$BUILD_DIR/"
 
-    cd $PACKAGE_DIR
+    cd "$BUILD_DIR"
 
-    zip -r ../${FUNCTION}.zip .
+    zip -r "../../${FUNCTION}.zip" .
 
     cd ../../
 
