@@ -25,6 +25,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Check Docker Python Version
+        run: |
+          docker run --rm \
+            lambda-builder \
+            python3 --version
+          
+          docker run --rm \
+            lambda-builder \
+            python3 -c "import sys; print(sys.version)"
+
+      - name: Check Pip
+        run: |
+          docker run --rm \
+            lambda-builder \
+            pip3 --version
+
       - name: Build Lambda Packages
         run: |
           docker build -t lambda-builder -f docker/Dockerfile .
@@ -32,6 +48,12 @@ jobs:
             -v ${{ github.workspace }}:/build \
             lambda-builder \
             bash /build/scripts/build_lambda.sh
+
+      - name: Debug Lambda Package
+        run: |
+          unzip -l rds_to_bronze.zip | grep numpy || true
+          unzip -l rds_to_bronze.zip | grep pandas || true
+          unzip -l rds_to_bronze.zip | head -100
 
       - name: Build Lambda Layer
         run: |
