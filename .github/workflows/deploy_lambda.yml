@@ -69,20 +69,20 @@ jobs:
               --query 'LastUpdateStatus' \
               --output text)
           
-            echo "Current status: $STATUS"
+            STATE=$(aws lambda get-function \
+              --function-name rds_to_bronze \
+              --query 'Configuration.State' \
+              --output text)
           
-            if [ "$STATUS" = "Successful" ]; then
+            echo "Status: $STATUS"
+            echo "State : $STATE"
+          
+            if [ "$STATUS" = "Successful" ] && [ "$STATE" = "Active" ]; then
               break
             fi
           
             sleep 5
           done
-
-      - name: Deploy RDS Lambda
-        run: |
-          aws lambda update-function-code \
-            --function-name rds_to_bronze \
-            --zip-file fileb://rds_to_bronze.zip
 
       - name: Attach Layer to RDS Lambda
         run: |
@@ -104,9 +104,15 @@ jobs:
               --query 'LastUpdateStatus' \
               --output text)
           
-            echo "Current status: $STATUS"
+            STATE=$(aws lambda get-function \
+              --function-name external_files_to_bronze \
+              --query 'Configuration.State' \
+              --output text)
           
-            if [ "$STATUS" = "Successful" ]; then
+            echo "Status: $STATUS"
+            echo "State : $STATE"
+          
+            if [ "$STATUS" = "Successful" ] && [ "$STATE" = "Active" ]; then
               break
             fi
           
