@@ -26,27 +26,17 @@ from common.schema_utils import detect_schema_changes
 
 def run_etl():
     # Create Database Connection
-    print("1. Creating DB connection")
     engine = create_connection()
-    print("1 Done")
 
     # Load Metadata
-    print("2. Loading processed tables")
     processed_tables = load_processed_tables()
-    print("2 Done")
 
-    print("3. Loading watermarks")
     watermarks = load_watermarks()
-    print("3 Done")
 
-    print("4. Loading table config")
     table_config = load_table_config()
-    print("4 Done")
 
     # Discover Tables
-    print("5. Getting tables")
     tables = get_all_tables(engine)
-    print("5 Done")
 
     print("=" * 70)
     print("Starting Bronze ETL")
@@ -195,14 +185,18 @@ def run_etl():
 
 
 def lambda_handler(event, context):
+
     try:
         run_etl()
 
         return {
             "statusCode": 200,
-            "body": "Success"
+            "body": "RDS to Bronze ETL completed successfully."
         }
 
     except Exception as e:
         traceback.print_exc()
-        raise
+        return {
+            "statusCode": 500,
+            "body": str(e)
+        }
