@@ -114,6 +114,9 @@ def detect_schema_changes(engine, table_name):
         if changed:
             print(f"Datatype Changes: {changed}")
 
+        saved_schemas[table_name] = current_schema
+        save_schema(saved_schemas)
+
         schema_changed = True
 
     else:
@@ -121,9 +124,5 @@ def detect_schema_changes(engine, table_name):
         print(f"No schema changes detected for table: {table_name}")
 
         schema_changed = False
-
-    saved_schemas[table_name] = current_schema
-
-    save_schema(saved_schemas)
 
     return schema_changed
