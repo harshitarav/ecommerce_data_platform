@@ -17,8 +17,8 @@ pip3 install \
 find layer/python -type d -name "__pycache__" -exec rm -rf {} +
 find layer/python -type d -name "tests" -exec rm -rf {} +
 find layer/python -type d -name "test" -exec rm -rf {} +
-find layer/python -type d -name "*.dist-info" -exec rm -rf {} +
-find layer/python -type d -name "*.egg-info" -exec rm -rf {} +
+#find layer/python -type d -name "*.dist-info" -exec rm -rf {} +
+#find layer/python -type d -name "*.egg-info" -exec rm -rf {} +
 
 cd layer
 
