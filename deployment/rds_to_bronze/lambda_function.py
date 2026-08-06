@@ -196,14 +196,16 @@ def run_etl():
 #             "body": str(e)
 #         }
 
+
 def lambda_handler(event, context):
 
-    print("Testing S3")
+    print("Step 1")
 
-    response = s3.list_buckets()
+    s3 = boto3.client("s3")
 
-    print(response)
+    print("Step 2")
 
     return {
-        "statusCode": 200
+        "statusCode": 200,
+        "body": "Success"
     }
