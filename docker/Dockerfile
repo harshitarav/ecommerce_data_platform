@@ -10,17 +10,14 @@
 #
 #CMD ["/bin/bash"]
 
-FROM public.ecr.aws/lambda/python:3.11
+FROM python:3.11-slim
 
-RUN microdnf install -y \
-    zip \
-    findutils \
- && microdnf clean all
+RUN apt-get update && \
+    apt-get install -y zip findutils && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
 COPY . .
-
-ENTRYPOINT []
 
 CMD ["/bin/bash"]
