@@ -23,8 +23,6 @@ from common.metadata_utils import (
 from common.s3_utils import upload_to_s3
 from common.schema_utils import detect_schema_changes
 
-s3 = boto3.client("s3")
-
 
 def run_etl():
     # ==========================================================
@@ -197,15 +195,21 @@ def run_etl():
 #         }
 
 
+s3 = boto3.client("s3")
+
 def lambda_handler(event, context):
 
     print("Step 1")
 
-    s3 = boto3.client("s3")
+    response = s3.list_objects_v2(
+        Bucket="e-commerce-de-project",
+        MaxKeys=1
+    )
+
+    print(response)
 
     print("Step 2")
 
     return {
-        "statusCode": 200,
-        "body": "Success"
+        "statusCode": 200
     }
