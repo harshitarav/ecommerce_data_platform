@@ -15,7 +15,7 @@ SCHEMA_KEY = "metadata/schema.json"
 def load_saved_schema():
 
     print("Step 1 - Before reading schema from S3")
-
+    print("About to call read_json_from_s3")
     schema = read_json_from_s3(
         bucket_name=SCHEMA_BUCKET,
         object_key=SCHEMA_KEY

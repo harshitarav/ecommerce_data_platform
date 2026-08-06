@@ -1,8 +1,11 @@
 import json
 import boto3
 from botocore.exceptions import ClientError
-
+print("s3_utils module imported")
 from config.config import *
+
+
+print("***** S3_UTILS LOADED *****")
 
 # ==========================================================
 # Create S3 Client
@@ -12,7 +15,7 @@ s3 = boto3.client(
     "s3",
     region_name=AWS_REGION
 )
-
+print("S3 client created")
 # ==========================================================
 # Upload File to S3
 # ==========================================================
@@ -34,13 +37,14 @@ def read_json_from_s3(
         bucket_name,
         object_key
 ):
-
+    print("Entering read_json_from_s3")
     try:
-
+        print("Calling get_object...")
         response = s3.get_object(
             Bucket=bucket_name,
             Key=object_key
         )
+        print("get_object returned")
 
         return json.loads(
             response["Body"].read().decode("utf-8")
