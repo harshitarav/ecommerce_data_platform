@@ -1,6 +1,7 @@
 from datetime import datetime
 import os
 import traceback
+import boto3
 
 from common.db_utils import (
     create_connection,
@@ -21,6 +22,9 @@ from common.metadata_utils import (
 )
 from common.s3_utils import upload_to_s3
 from common.schema_utils import detect_schema_changes
+
+s3 = boto3.client("s3")
+
 
 def run_etl():
     # ==========================================================
@@ -175,19 +179,31 @@ def run_etl():
 
 
 # Lambda Handler
+# def lambda_handler(event, context):
+#
+#     try:
+#         run_etl()
+#
+#         return {
+#             "statusCode": 200,
+#             "body": "RDS to Bronze ETL completed successfully."
+#         }
+#
+#     except Exception as e:
+#         traceback.print_exc()
+#         return {
+#             "statusCode": 500,
+#             "body": str(e)
+#         }
+
 def lambda_handler(event, context):
 
-    try:
-        run_etl()
+    print("Testing S3")
 
-        return {
-            "statusCode": 200,
-            "body": "RDS to Bronze ETL completed successfully."
-        }
+    response = s3.list_buckets()
 
-    except Exception as e:
-        traceback.print_exc()
-        return {
-            "statusCode": 500,
-            "body": str(e)
-        }
+    print(response)
+
+    return {
+        "statusCode": 200
+    }
