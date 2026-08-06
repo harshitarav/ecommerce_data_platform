@@ -54,6 +54,9 @@ def read_incremental_data(
         incremental_column,
         watermark
 ):
+    print(f"Table = {table_name}")
+    print(f"Incremental column = {incremental_column}")
+    print(f"Watermark = {watermark}")
 
     query = text(f"""
         SELECT *
@@ -61,11 +64,15 @@ def read_incremental_data(
         WHERE {incremental_column} > :watermark
     """)
 
-    return pd.read_sql(
+    df = pd.read_sql(
         query,
         engine,
         params={"watermark": watermark}
     )
+
+    print(f"Rows returned = {len(df)}")
+
+    return df
 
 
 # ==========================================================
