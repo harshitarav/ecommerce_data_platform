@@ -1,28 +1,36 @@
 import json
-import os
 import pandas as pd
 from sqlalchemy import text
+from config.config import *
 
-SCHEMA_FILE = "/tmp/schema.json"
+from common.s3_utils import (
+    read_json_from_s3,
+    write_json_to_s3
+)
+
+SCHEMA_BUCKET = BUCKET_NAME
+
+SCHEMA_KEY = "metadata/schema.json"
 
 def load_saved_schema():
-    if not os.path.exists(SCHEMA_FILE):
+
+    schema = read_json_from_s3(
+        bucket_name=SCHEMA_BUCKET,
+        object_key=SCHEMA_KEY
+    )
+
+    if schema is None:
         return {}
 
-    if os.path.getsize(SCHEMA_FILE) == 0:
-        return {}
-
-    with open(SCHEMA_FILE, "r") as file:
-        return json.load(file)
+    return schema
 
 def save_schema(schema):
 
-    with open(SCHEMA_FILE, "w") as file:
-        json.dump(
-            schema,
-            file,
-            indent=4
-        )
+    write_json_to_s3(
+        data=schema,
+        bucket_name=SCHEMA_BUCKET,
+        object_key=SCHEMA_KEY
+    )
 
 def get_current_schema(engine, table_name):
 

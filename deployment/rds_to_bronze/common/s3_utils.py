@@ -1,4 +1,6 @@
+import json
 import boto3
+from botocore.exceptions import ClientError
 
 from config.config import *
 
@@ -27,4 +29,45 @@ def upload_to_s3(
     )
 
     print(f"Uploaded -> {s3_key}")
+
+def read_json_from_s3(
+        bucket_name,
+        object_key
+):
+
+    try:
+
+        response = s3.get_object(
+            Bucket=bucket_name,
+            Key=object_key
+        )
+
+        return json.loads(
+            response["Body"].read().decode("utf-8")
+        )
+
+    except ClientError as e:
+
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            return None
+
+        raise
+
+def write_json_to_s3(
+        data,
+        bucket_name,
+        object_key
+):
+
+    s3.put_object(
+        Bucket=bucket_name,
+        Key=object_key,
+        Body=json.dumps(
+            data,
+            indent=4
+        ),
+        ContentType="application/json"
+    )
+
+    print(f"Schema saved -> s3://{bucket_name}/{object_key}")
 
