@@ -10,11 +10,19 @@
 #
 #CMD ["/bin/bash"]
 
-FROM python:3.11-slim
+#FROM python:3.11-slim
+#
+#RUN apt-get update && \
+#    apt-get install -y zip findutils && \
+#    rm -rf /var/lib/apt/lists/*
+#
+#WORKDIR /build
+#
+#COPY . .
+#
+#CMD ["/bin/bash"]
 
-RUN apt-get update && \
-    apt-get install -y zip findutils && \
-    rm -rf /var/lib/apt/lists/*
+FROM public.ecr.aws/sam/build-python3.11:latest
 
 WORKDIR /build
 
