@@ -1,5 +1,13 @@
 import json
 import os
+import boto3
+from botocore.exceptions import ClientError
+from config.config import *
+
+s3 = boto3.client("s3")
+
+SCHEMA_BUCKET = BUCKET_NAME
+WATERMARK_KEY = "metadata/watermark.json"
 
 # ==========================================================
 # Project Root
@@ -66,16 +74,23 @@ def save_processed_tables(processed_tables):
 
 def load_watermarks():
 
-    if not os.path.exists(WATERMARK_FILE):
-        return {}
+    try:
 
-    with open(WATERMARK_FILE, "r") as file:
+        response = s3.get_object(
+            Bucket=BUCKET_NAME,
+            Key=WATERMARK_KEY
+        )
 
-        try:
-            return json.load(file)
+        return json.loads(
+            response["Body"].read().decode("utf-8")
+        )
 
-        except json.JSONDecodeError:
+    except ClientError as e:
+
+        if e.response["Error"]["Code"] == "NoSuchKey":
             return {}
+
+        raise
 
 # ==========================================================
 # Save Watermarks
@@ -83,14 +98,20 @@ def load_watermarks():
 
 def save_watermarks(watermarks):
 
-    with open(WATERMARK_FILE, "w") as file:
-
-        json.dump(
+    s3.put_object(
+        Bucket=BUCKET_NAME,
+        Key=WATERMARK_KEY,
+        Body=json.dumps(
             watermarks,
-            file,
             indent=4,
             default=str
-        )
+        ),
+        ContentType="application/json"
+    )
+
+    print(
+        f"Watermark saved -> s3://{BUCKET_NAME}/{WATERMARK_KEY}"
+    )
 
 # ==========================================================
 # Is New Table?
