@@ -3,16 +3,9 @@ import os
 import pandas as pd
 from sqlalchemy import text
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-SCHEMA_FILE = os.path.join(
-    BASE_DIR,
-    "logs",
-    "schema.json"
-)
+SCHEMA_FILE = "/tmp/schema.json"
 
 def load_saved_schema():
-
     if not os.path.exists(SCHEMA_FILE):
         return {}
 
