@@ -97,7 +97,7 @@ def load_watermarks():
 # ==========================================================
 
 def save_watermarks(watermarks):
-
+    print("Uploading watermark.json to S3")
     s3.put_object(
         Bucket=BUCKET_NAME,
         Key=WATERMARK_KEY,
@@ -108,6 +108,7 @@ def save_watermarks(watermarks):
         ),
         ContentType="application/json"
     )
+    print("Upload complete")
 
     print(
         f"Watermark saved -> s3://{BUCKET_NAME}/{WATERMARK_KEY}"

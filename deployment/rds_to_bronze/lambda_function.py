@@ -140,11 +140,13 @@ def run_etl():
         print("Temporary local parquet deleted.")
 
         # Update Watermark
+        print("Getting latest watermark...")
         latest_watermark = get_latest_watermark(
             engine,
             table,
             incremental_column
         )
+        print("Getting latest watermark...")
 
         watermarks = update_watermark(
             table,
@@ -152,9 +154,12 @@ def run_etl():
             watermarks
         )
 
+        print(f"Latest watermark = {latest_watermark}")
         save_watermarks(
             watermarks
         )
+        print("Saving watermark...")
+        print(watermarks)
 
         print("Watermark updated.")
 
