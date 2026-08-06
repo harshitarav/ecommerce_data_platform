@@ -55,10 +55,6 @@ def read_incremental_data(
         watermark
 ):
 
-    print(f"Table = {table_name}")
-    print(f"Incremental column = {incremental_column}")
-    print(f"Watermark = {watermark}")
-
     if watermark is None:
 
         query = text(f"""
@@ -81,8 +77,6 @@ def read_incremental_data(
             engine,
             params={"watermark": watermark}
         )
-
-    print(f"Rows returned = {len(df)}")
 
     return df
 

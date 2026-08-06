@@ -1,127 +1,100 @@
 import json
-import os
-import pandas as pd
-from sqlalchemy import text
+import boto3
+from botocore.exceptions import ClientError
+from config.config import *
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-SCHEMA_FILE = os.path.join(
-    BASE_DIR,
-    "logs",
-    "schema.json"
-)
+SCHEMA_BUCKET = BUCKET_NAME
+SCHEMA_KEY = "metadata/schema.json"
 
-def load_saved_schema():
+s3 = boto3.client("s3")
 
-    if not os.path.exists(SCHEMA_FILE):
-        return {}
 
-    if os.path.getsize(SCHEMA_FILE) == 0:
-        return {}
+def load_schema():
 
-    with open(SCHEMA_FILE, "r") as file:
-        return json.load(file)
+    try:
+
+        response = s3.get_object(
+            Bucket=BUCKET_NAME,
+            Key=SCHEMA_KEY
+        )
+
+        return json.loads(
+            response["Body"].read().decode("utf-8")
+        )
+
+    except ClientError as e:
+
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            return {}
+
+        raise
+
 
 def save_schema(schema):
 
-    with open(SCHEMA_FILE, "w") as file:
-        json.dump(
-            schema,
-            file,
-            indent=4
-        )
-
-def get_current_schema(engine, table_name):
-
-    query = text("""
-        SELECT
-            COLUMN_NAME,
-            DATA_TYPE
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = :database
-          AND TABLE_NAME = :table
-        ORDER BY ORDINAL_POSITION
-    """)
-
-    schema = pd.read_sql(
-        query,
-        engine,
-        params={
-            "database": "ecommerce",
-            "table": table_name
-        }
+    s3.put_object(
+        Bucket=BUCKET_NAME,
+        Key=SCHEMA_KEY,
+        Body=json.dumps(schema, indent=4),
+        ContentType="application/json"
     )
 
-    current_schema = {}
 
-    for _, row in schema.iterrows():
+def detect_schema_changes(dataset_name, df):
 
-        current_schema[row["COLUMN_NAME"]] = row["DATA_TYPE"]
+    saved_schema = load_schema()
 
-    return current_schema
+    current_schema = {
+        col: str(dtype)
+        for col, dtype in df.dtypes.items()
+    }
 
-def compare_schema(saved_schema, current_schema):
+    old_schema = saved_schema.get(dataset_name, {})
 
-    added_columns = {}
-    removed_columns = {}
-    datatype_changes = {}
+    added = {
+        k: v
+        for k, v in current_schema.items()
+        if k not in old_schema
+    }
 
-    # Added columns
-    for column, datatype in current_schema.items():
-        if column not in saved_schema:
-            added_columns[column] = datatype
+    removed = {
+        k: v
+        for k, v in old_schema.items()
+        if k not in current_schema
+    }
 
-    # Removed columns
-    for column, datatype in saved_schema.items():
-        if column not in current_schema:
-            removed_columns[column] = datatype
+    changed = {}
 
-    # Datatype changes
-    for column in saved_schema.keys() & current_schema.keys():
-        if saved_schema[column] != current_schema[column]:
-            datatype_changes[column] = {
-                "old": saved_schema[column],
-                "new": current_schema[column]
+    for col in current_schema:
+
+        if (
+            col in old_schema
+            and current_schema[col] != old_schema[col]
+        ):
+
+            changed[col] = {
+                "old": old_schema[col],
+                "new": current_schema[col]
             }
-
-    return added_columns, removed_columns, datatype_changes
-
-def detect_schema_changes(engine, table_name):
-
-    saved_schemas = load_saved_schema()
-
-    saved_schema = saved_schemas.get(table_name, {})
-
-    current_schema = get_current_schema(engine, table_name)
-
-    added, removed, changed = compare_schema(
-        saved_schema,
-        current_schema
-    )
 
     if added or removed or changed:
 
-        print(f"\nSchema change detected for table: {table_name}")
+        print(f"\nSchema change detected : {dataset_name}")
 
         if added:
-            print(f"Added Columns: {added}")
+            print(f"Added : {added}")
 
         if removed:
-            print(f"Removed Columns: {removed}")
+            print(f"Removed : {removed}")
 
         if changed:
-            print(f"Datatype Changes: {changed}")
-
-        schema_changed = True
+            print(f"Changed : {changed}")
 
     else:
 
-        print(f"No schema changes detected for table: {table_name}")
+        print(f"No schema changes : {dataset_name}")
 
-        schema_changed = False
+    saved_schema[dataset_name] = current_schema
 
-    saved_schemas[table_name] = current_schema
-
-    save_schema(saved_schemas)
-
-    return schema_changed
+    save_schema(saved_schema)

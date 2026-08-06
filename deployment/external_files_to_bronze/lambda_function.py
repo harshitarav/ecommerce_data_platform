@@ -6,7 +6,10 @@ import tempfile
 import traceback
 import logging
 from botocore.exceptions import ClientError
+from datetime import datetime
+from common.schema_utils import detect_schema_changes
 
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -153,6 +156,10 @@ def run_etl():
             # --------------------------------------------------
 
             df = pd.read_csv(local_csv)
+            detect_schema_changes(
+                dataset_name,
+                df
+            )
 
             logger.info(f"Rows Read : {len(df):,}")
 
@@ -184,7 +191,7 @@ def run_etl():
             s3.upload_file(
                 output_file,
                 BUCKET_NAME,
-                f"bronze/files/{dataset_name}/{dataset_name}.parquet"
+                f"bronze/files/{dataset_name}/{dataset_name}_{timestamp}.parquet"
             )
 
             logger.info(f"{dataset_name} uploaded successfully to S3 Bronze.")
