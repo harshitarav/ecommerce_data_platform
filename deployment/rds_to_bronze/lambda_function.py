@@ -195,4 +195,14 @@ def run_etl():
 
 
 def lambda_handler(event, context):
-    run_etl()
+    try:
+        run_etl()
+
+        return {
+            "statusCode": 200,
+            "body": "Success"
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise
