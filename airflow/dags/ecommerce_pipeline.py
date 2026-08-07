@@ -5,7 +5,8 @@ from airflow import DAG
 from airflow.providers.amazon.aws.operators.lambda_function import LambdaInvokeFunctionOperator
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.amazon.aws.operators.glue_crawler import GlueCrawlerOperator
-from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+# from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
 default_args = {
     "owner": "Harshita",
@@ -145,15 +146,27 @@ with DAG(
     )
 
     # Snowflake Stored Procedures
-    load_silver = SnowflakeOperator(
+    # load_silver = SnowflakeOperator(
+    #     task_id="load_silver",
+    #     snowflake_conn_id="snowflake_default",
+    #     sql="CALL SP_LOAD_SILVER();"
+    # )
+
+    load_silver = SQLExecuteQueryOperator(
         task_id="load_silver",
-        snowflake_conn_id="snowflake_default",
+        conn_id="snowflake_default",
         sql="CALL SP_LOAD_SILVER();"
     )
 
-    load_gold = SnowflakeOperator(
+    # load_gold = SnowflakeOperator(
+    #     task_id="load_gold",
+    #     snowflake_conn_id="snowflake_default",
+    #     sql="CALL SP_LOAD_GOLD();"
+    # )
+
+    load_gold = SQLExecuteQueryOperator(
         task_id="load_gold",
-        snowflake_conn_id="snowflake_default",
+        conn_id="snowflake_default",
         sql="CALL SP_LOAD_GOLD();"
     )
 
