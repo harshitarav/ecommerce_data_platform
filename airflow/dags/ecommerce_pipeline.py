@@ -80,6 +80,7 @@ with DAG(
         task_id="rds_to_bronze",
         function_name="rds_to_bronze",
         aws_conn_id="aws_default",
+        region_name="us-east-1",
         invocation_type="RequestResponse"
     )
 
@@ -87,6 +88,7 @@ with DAG(
         task_id="external_files_to_bronze",
         function_name="external_files_to_bronze",
         aws_conn_id="aws_default",
+        region_name="us-east-1",
         invocation_type="RequestResponse"
     )
 
@@ -131,7 +133,7 @@ with DAG(
 
     validate_gold = GlueJobOperator(
         task_id="validate_gold",
-        job_name="validate_gold",
+        job_name="validate-gold",
         aws_conn_id="aws_default",
         wait_for_completion=True
     )
@@ -140,7 +142,7 @@ with DAG(
     silver_crawler = GlueCrawlerOperator(
         task_id="silver_crawler",
         config={
-            "Name": "silver_crawler"
+            "Name": "silver_rds_crawler"
         },
         aws_conn_id="aws_default"
     )
@@ -155,7 +157,8 @@ with DAG(
     load_silver = SQLExecuteQueryOperator(
         task_id="load_silver",
         conn_id="snowflake_default",
-        sql="CALL SP_LOAD_SILVER();"
+        sql="CALL ECOMMERCE_DW.SILVER.SP_LOAD_SILVER();",
+        autocommit=True
     )
 
     # load_gold = SnowflakeOperator(
@@ -167,7 +170,8 @@ with DAG(
     load_gold = SQLExecuteQueryOperator(
         task_id="load_gold",
         conn_id="snowflake_default",
-        sql="CALL SP_LOAD_GOLD();"
+        sql="CALL ECOMMERCE_DW.GOLD.SP_LOAD_GOLD('{{ run_id }}');",
+        autocommit=True
     )
 
     # ==========================================================
