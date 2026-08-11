@@ -2682,47 +2682,45 @@ def write_to_gold_catalog(
         f"Writing {table_name} to S3 and updating Glue Data Catalog."
     )
 
-    # # ======================================================
-    # # INCREMENTAL LOAD
-    # # Delete ONLY affected partition folders first
-    # # ======================================================
-    #
-    # if (
-    #     LOAD_MODE == "INCREMENTAL"
-    #     and affected_partitions_df is not None
-    # ):
-    #
-    #     affected_rows = (
-    #         affected_partitions_df
-    #         .select(*partition_columns)
-    #         .distinct()
-    #         .collect()
-    #     )
-    #
-    #     for row in affected_rows:
-    #
-    #         partition_values = []
-    #
-    #         for column in partition_columns:
-    #
-    #             value = row[column]
-    #
-    #             partition_values.append(
-    #                 f"{column}={value}"
-    #             )
-    #
-    #         partition_path = (
-    #             target_path
-    #             + "/".join(partition_values)
-    #             + "/"
-    #         )
-    #
-    #         logger.info(
-    #             f"Deleting affected Gold partition: "
-    #             f"{partition_path}"
-    #         )
-    #
-    #         delete_s3_prefix(partition_path)
+    # ======================================================
+    # INCREMENTAL LOAD
+    # Delete ONLY affected partition folders first
+    # ======================================================
+
+    if (
+            LOAD_MODE == "INCREMENTAL"
+            and affected_partitions_df is not None
+    ):
+
+        affected_rows = (
+            affected_partitions_df
+            .select(*partition_columns)
+            .distinct()
+            .collect()
+        )
+
+        for row in affected_rows:
+
+            partition_values = []
+
+            for column in partition_columns:
+                value = row[column]
+                partition_values.append(
+                    f"{column}={value}"
+                )
+
+            partition_path = (
+                    target_path
+                    + "/".join(partition_values)
+                    + "/"
+            )
+
+            logger.info(
+                f"Deleting affected Gold partition: "
+                f"{partition_path}"
+            )
+
+            delete_s3_prefix(partition_path)
 
     # ======================================================
     # WRITE USING GLUE SINK
