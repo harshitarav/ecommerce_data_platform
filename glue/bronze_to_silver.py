@@ -7,6 +7,7 @@ from awsglue.utils import getResolvedOptions
 from pyspark.sql.functions import count,col
 from pyspark.sql.window import Window
 from pyspark.sql import functions as F
+from pyspark import StorageLevel
 
 
 from common.logger import ETLLogger
@@ -446,8 +447,10 @@ def upsert_silver(
                     affected_buckets
                 )
             )
+            .persist(StorageLevel.MEMORY_AND_DISK)
         )
 
+        # Force Spark to materialize and cache the affected Silver data
         existing_count = existing_df.count()
 
         logger.info(
@@ -526,6 +529,9 @@ def upsert_silver(
             "dynamic"
         )
 
+        # Materialize final result BEFORE overwriting Silver
+        rows_to_write = final_affected_df.count()
+
         (
             final_affected_df
             .write
@@ -533,10 +539,8 @@ def upsert_silver(
             .partitionBy("_bucket")
             .parquet(silver_path)
         )
-        # ------------------------------------------------------
-        # Record change manifest ONLY after Silver write succeeds
-        # ------------------------------------------------------
 
+        # Record change manifest ONLY after Silver write succeeds
         record_change_manifest(
             changes_df=changes_df,
             table_name=table_name,
@@ -549,8 +553,11 @@ def upsert_silver(
                 f"Silver {table_name} incrementally "
                 "updated successfully."
             ),
-            rows_written=final_affected_df.count()
+            rows_written=rows_to_write
         )
+
+        # Release cached Silver data
+        existing_df.unpersist()
 
     except Exception as e:
 

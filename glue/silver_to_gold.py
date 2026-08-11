@@ -32,6 +32,16 @@ spark.conf.set(
     "dynamic"
 )
 
+spark.conf.set(
+    "spark.sql.parquet.mergeSchema",
+    "true"
+)
+
+spark.conf.set(
+    "spark.sql.hive.convertMetastoreParquet.mergeSchema",
+    "true"
+)
+
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
@@ -270,7 +280,12 @@ def read_silver_change_manifest(watermark):
 
         manifest_df = (
             spark.read
+            .option("mergeSchema", "true")
             .parquet(SILVER_CHANGE_LOG_PATH)
+        )
+
+        logger.info(
+            f"Silver change manifest columns: {manifest_df.columns}"
         )
 
         watermark_ts = F.to_timestamp(
@@ -282,6 +297,11 @@ def read_silver_change_manifest(watermark):
             .filter(
                 F.col("changed_at") > watermark_ts
             )
+        )
+
+        logger.info(
+            f"Silver change manifest rows after watermark = "
+            f"{changed_df.count()}"
         )
 
         logger.info(
@@ -302,16 +322,78 @@ def read_silver_change_manifest(watermark):
 # SPLIT SILVER CHANGE MANIFEST BY TABLE
 # ==========================================================
 
+# ==========================================================
+# SPLIT SILVER CHANGE MANIFEST BY TABLE
+# ==========================================================
+
+TABLE_KEY_COLUMNS = {
+    "orders": ["order_id"],
+    "order_items": ["order_id", "order_item_id"],
+    "payments": ["order_id"],
+    "reviews": ["order_id"],
+    "shipment": ["order_id"],
+    "customers": ["customer_id"],
+    "products": ["product_id"],
+    "sellers": ["seller_id"],
+    "inventory": ["inventory_id"]
+}
+
+
 def get_table_changes(manifest_df, table_name):
 
     try:
 
-        return (
+        if table_name not in TABLE_KEY_COLUMNS:
+            raise ValueError(
+                f"Unknown table_name in Gold ETL: {table_name}"
+            )
+
+        key_columns = TABLE_KEY_COLUMNS[table_name]
+
+        # ------------------------------------------------------
+        # Filter manifest for this source table
+        # ------------------------------------------------------
+
+        table_changes = (
             manifest_df
             .filter(
                 F.col("table_name") == table_name
             )
         )
+
+        # ------------------------------------------------------
+        # IMPORTANT:
+        # The manifest is a shared Parquet dataset.
+        #
+        # Different source tables have different primary-key
+        # columns. If this run has no changes for a particular
+        # table, those columns may not exist in the manifest
+        # schema at all.
+        #
+        # Add missing key columns as NULL so downstream
+        # .select("order_id"), etc. always works.
+        # ------------------------------------------------------
+
+        for key_column in key_columns:
+
+            if key_column not in table_changes.columns:
+
+                table_changes = table_changes.withColumn(
+                    key_column,
+                    F.lit(None).cast("string")
+                )
+
+        logger.info(
+            f"{table_name}: Change rows = "
+            f"{table_changes.count()}"
+        )
+
+        logger.info(
+            f"{table_name}: Change columns = "
+            f"{table_changes.columns}"
+        )
+
+        return table_changes
 
     except Exception:
 
@@ -538,6 +620,10 @@ else:
 
     silver_changes_df = read_silver_change_manifest(
         gold_watermark
+    )
+
+    logger.info(
+        f"FINAL manifest columns = {silver_changes_df.columns}"
     )
 
     # ------------------------------------------------------
@@ -2016,6 +2102,115 @@ def read_existing_gold_fact_sales_for_keys(
         )
 
         raise
+
+# ==========================================================
+# DELETED FACT SALES ROWS
+# ==========================================================
+
+deleted_fact_sales_rows_df = None
+deleted_fact_sales_keys_df = None
+
+if LOAD_MODE == "INCREMENTAL":
+
+    # ------------------------------------------------------
+    # Deleted order-item keys
+    # ------------------------------------------------------
+
+    deleted_order_item_keys_df = (
+        changed_order_items_df
+        .filter(
+            F.col("operation") == "DELETE"
+        )
+        .select(
+            "order_id",
+            "order_item_id"
+        )
+        .distinct()
+    )
+
+    # ------------------------------------------------------
+    # Deleted order keys
+    # ------------------------------------------------------
+
+    deleted_order_ids_df = (
+        changed_orders_df
+        .filter(
+            F.col("operation") == "DELETE"
+        )
+        .select(
+            "order_id"
+        )
+        .distinct()
+    )
+
+    # ------------------------------------------------------
+    # Read existing Gold fact_sales
+    # ------------------------------------------------------
+
+    existing_gold_fact_sales = (
+        spark.read.parquet(
+            GOLD_TABLE_PATHS["fact_sales"]
+        )
+    )
+
+    # ------------------------------------------------------
+    # Identify old fact_sales rows affected by DELETE
+    #
+    # 1. Entire order deleted
+    # 2. Individual order item deleted
+    # ------------------------------------------------------
+
+    deleted_fact_sales_rows_df = (
+        existing_gold_fact_sales
+
+        .join(
+            deleted_order_ids_df
+            .withColumn(
+                "_delete_order",
+                F.lit(1)
+            ),
+            "order_id",
+            "left"
+        )
+
+        .join(
+            deleted_order_item_keys_df
+            .withColumn(
+                "_delete_item",
+                F.lit(1)
+            ),
+            [
+                "order_id",
+                "order_item_id"
+            ],
+            "left"
+        )
+
+        .filter(
+            F.col("_delete_order").isNotNull()
+            |
+            F.col("_delete_item").isNotNull()
+        )
+
+        .drop(
+            "_delete_order",
+            "_delete_item"
+        )
+    )
+
+    # ------------------------------------------------------
+    # Keep only business keys for Gold DELETE
+    # ------------------------------------------------------
+
+    deleted_fact_sales_keys_df = (
+        deleted_fact_sales_rows_df
+        .select(
+            "order_id",
+            "order_item_id"
+        )
+        .distinct()
+    )
+
 # ==========================================================
 # BUILD GOLD DATASETS
 #
@@ -2314,16 +2509,28 @@ else:
     )
 
     deleted_inventory_groups = (
+    spark.read
+    .parquet(
+        GOLD_TABLE_PATHS["dim_inventory"]
+    )
+    .join(
         changed_inventory_df
         .filter(
             F.col("operation") == "DELETE"
         )
         .select(
-            "warehouse_id",
-            "product_id"
+            "inventory_id"
         )
-        .distinct()
+        .distinct(),
+        "inventory_id",
+        "inner"
     )
+    .select(
+        "warehouse_id",
+        "product_id"
+    )
+    .distinct()
+)
 
     affected_inventory_groups = (
         current_inventory_groups
@@ -2475,47 +2682,47 @@ def write_to_gold_catalog(
         f"Writing {table_name} to S3 and updating Glue Data Catalog."
     )
 
-    # ======================================================
-    # INCREMENTAL LOAD
-    # Delete ONLY affected partition folders first
-    # ======================================================
-
-    if (
-        LOAD_MODE == "INCREMENTAL"
-        and affected_partitions_df is not None
-    ):
-
-        affected_rows = (
-            affected_partitions_df
-            .select(*partition_columns)
-            .distinct()
-            .collect()
-        )
-
-        for row in affected_rows:
-
-            partition_values = []
-
-            for column in partition_columns:
-
-                value = row[column]
-
-                partition_values.append(
-                    f"{column}={value}"
-                )
-
-            partition_path = (
-                target_path
-                + "/".join(partition_values)
-                + "/"
-            )
-
-            logger.info(
-                f"Deleting affected Gold partition: "
-                f"{partition_path}"
-            )
-
-            delete_s3_prefix(partition_path)
+    # # ======================================================
+    # # INCREMENTAL LOAD
+    # # Delete ONLY affected partition folders first
+    # # ======================================================
+    #
+    # if (
+    #     LOAD_MODE == "INCREMENTAL"
+    #     and affected_partitions_df is not None
+    # ):
+    #
+    #     affected_rows = (
+    #         affected_partitions_df
+    #         .select(*partition_columns)
+    #         .distinct()
+    #         .collect()
+    #     )
+    #
+    #     for row in affected_rows:
+    #
+    #         partition_values = []
+    #
+    #         for column in partition_columns:
+    #
+    #             value = row[column]
+    #
+    #             partition_values.append(
+    #                 f"{column}={value}"
+    #             )
+    #
+    #         partition_path = (
+    #             target_path
+    #             + "/".join(partition_values)
+    #             + "/"
+    #         )
+    #
+    #         logger.info(
+    #             f"Deleting affected Gold partition: "
+    #             f"{partition_path}"
+    #         )
+    #
+    #         delete_s3_prefix(partition_path)
 
     # ======================================================
     # WRITE USING GLUE SINK
@@ -2895,113 +3102,6 @@ def upsert_gold_table(
         )
 
         raise
-# ==========================================================
-# DELETED FACT SALES ROWS
-# ==========================================================
-
-deleted_fact_sales_rows_df = None
-deleted_fact_sales_keys_df = None
-
-if LOAD_MODE == "INCREMENTAL":
-
-    # ------------------------------------------------------
-    # Deleted order-item keys
-    # ------------------------------------------------------
-
-    deleted_order_item_keys_df = (
-        changed_order_items_df
-        .filter(
-            F.col("operation") == "DELETE"
-        )
-        .select(
-            "order_id",
-            "order_item_id"
-        )
-        .distinct()
-    )
-
-    # ------------------------------------------------------
-    # Deleted order keys
-    # ------------------------------------------------------
-
-    deleted_order_ids_df = (
-        changed_orders_df
-        .filter(
-            F.col("operation") == "DELETE"
-        )
-        .select(
-            "order_id"
-        )
-        .distinct()
-    )
-
-    # ------------------------------------------------------
-    # Read existing Gold fact_sales
-    # ------------------------------------------------------
-
-    existing_gold_fact_sales = (
-        spark.read.parquet(
-            GOLD_TABLE_PATHS["fact_sales"]
-        )
-    )
-
-    # ------------------------------------------------------
-    # Identify old fact_sales rows affected by DELETE
-    #
-    # 1. Entire order deleted
-    # 2. Individual order item deleted
-    # ------------------------------------------------------
-
-    deleted_fact_sales_rows_df = (
-        existing_gold_fact_sales
-
-        .join(
-            deleted_order_ids_df
-            .withColumn(
-                "_delete_order",
-                F.lit(1)
-            ),
-            "order_id",
-            "left"
-        )
-
-        .join(
-            deleted_order_item_keys_df
-            .withColumn(
-                "_delete_item",
-                F.lit(1)
-            ),
-            [
-                "order_id",
-                "order_item_id"
-            ],
-            "left"
-        )
-
-        .filter(
-            F.col("_delete_order").isNotNull()
-            |
-            F.col("_delete_item").isNotNull()
-        )
-
-        .drop(
-            "_delete_order",
-            "_delete_item"
-        )
-    )
-
-    # ------------------------------------------------------
-    # Keep only business keys for Gold DELETE
-    # ------------------------------------------------------
-
-    deleted_fact_sales_keys_df = (
-        deleted_fact_sales_rows_df
-        .select(
-            "order_id",
-            "order_item_id"
-        )
-        .distinct()
-    )
 
 # ==========================================================
 # DELETED INVENTORY SUMMARY KEYS
@@ -3011,21 +3111,48 @@ deleted_inventory_summary_keys_df = None
 
 if LOAD_MODE == "INCREMENTAL":
 
-    deleted_inventory_summary_keys_df = (
+    # ==========================================================
+    # DELETED INVENTORY SUMMARY KEYS
+    # ==========================================================
 
-        changed_inventory_df
+    deleted_inventory_summary_keys_df = None
 
-        .filter(
-            F.col("operation") == "DELETE"
+    if LOAD_MODE == "INCREMENTAL":
+        deleted_inventory_ids_df = (
+            changed_inventory_df
+            .filter(
+                F.col("operation") == "DELETE"
+            )
+            .select(
+                "inventory_id"
+            )
+            .distinct()
         )
 
-        .select(
-            "warehouse_id",
-            "product_id"
+        # Read the OLD Gold inventory dimension so that
+        # inventory_id can still be mapped to warehouse + product
+        # after the Silver inventory record has been deleted.
+
+        existing_gold_inventory = (
+            spark.read
+            .parquet(
+                GOLD_TABLE_PATHS["dim_inventory"]
+            )
         )
 
-        .distinct()
-    )
+        deleted_inventory_summary_keys_df = (
+            existing_gold_inventory
+            .join(
+                deleted_inventory_ids_df,
+                "inventory_id",
+                "inner"
+            )
+            .select(
+                "warehouse_id",
+                "product_id"
+            )
+            .distinct()
+        )
 
 # ==========================================================
 # CLASSIFY GOLD UPSERT OPERATIONS
@@ -3252,6 +3379,20 @@ if LOAD_MODE == "INCREMENTAL":
     # ------------------------------------------------------
     # CUSTOMER
     # ------------------------------------------------------
+    print("========== EXISTING GOLD CUSTOMER KEYS ==========")
+
+    existing_customer_ids = (
+        spark.read
+        .parquet(GOLD_TABLE_PATHS["dim_customer"])
+        .select("customer_id")
+        .dropDuplicates()
+    )
+
+    existing_customer_ids.show(20, truncate=False)
+
+    print("========== CURRENT INCREMENTAL CUSTOMER KEYS ==========")
+
+    gold_dim_customer.select("customer_id").show(20, truncate=False)
 
     customer_insert_df, customer_update_df = (
         classify_gold_changes(
