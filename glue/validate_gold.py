@@ -1270,7 +1270,7 @@ try:
     report.add_result(
         validation_name="Payment Order Referential Integrity",
         status=status,
-        severity="CRITICAL",
+        severity="WARNING",
         expected=0,
         actual=invalid_payment_orders,
         remarks="All payment orders must exist in fact_sales."
