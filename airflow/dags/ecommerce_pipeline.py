@@ -184,11 +184,11 @@ with DAG(
 
     [bronze_rds_crawler, bronze_files_crawler] >> bronze_to_silver
 
-    bronze_to_silver >> validate_silver
+    bronze_to_silver >> silver_crawler
 
-    validate_silver >> silver_crawler
+    silver_crawler >> validate_silver
 
-    silver_crawler >> load_silver
+    validate_silver >> load_silver
 
     load_silver >> silver_to_gold
 

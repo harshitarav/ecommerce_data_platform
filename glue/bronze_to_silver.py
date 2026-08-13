@@ -67,8 +67,8 @@ def read_bronze_incremental(table_name, transformation_ctx):
     )
 
     logger.info(
-        event="READ_BRONZE_INCREMENTAL",
-        message=f"Reading incremental Bronze data for {table_name}",
+        event="READ_BRONZE",
+        message=f"Reading Bronze data for {table_name} using Glue Job Bookmarks",
         rows_read=df.count()
     )
 
