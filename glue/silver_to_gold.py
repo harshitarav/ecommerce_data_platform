@@ -630,18 +630,22 @@ else:
     # No new Silver changes
     # ------------------------------------------------------
 
-    if silver_changes_df.rdd.isEmpty():
-        logger.info(
-            "No new Silver changes detected."
-        )
+    # if silver_changes_df.rdd.isEmpty():
+    #     logger.info(
+    #         "No new Silver changes detected."
+    #     )
+    #
+    #     logger.info(
+    #         "Gold ETL completed successfully. "
+    #         "No processing required."
+    #     )
+    #
+    #     job.commit()
+    #     sys.exit(0)
 
-        logger.info(
-            "Gold ETL completed successfully. "
-            "No processing required."
-        )
-
-        job.commit()
-        sys.exit(0)
+        # job.commit()
+        #
+        # sys.exit(0)
 
     # ------------------------------------------------------
     # Split manifest by source table
@@ -1540,14 +1544,13 @@ dim_customer_df = customers_df
 # ----------------------------------
 
 dim_customer_df = dim_customer_df.select(
-
     "customer_id",
     "customer_unique_id",
     "customer_zip_code_prefix",
     "customer_city",
     "customer_state",
-    "loyalty_points"
-
+    "loyalty_points",
+    "is_deleted"
 )
 dim_customer_df = (
     dim_customer_df
@@ -2670,6 +2673,10 @@ if LOAD_MODE == "FULL" and inventory_summary_count == 0:
 # WRITE DATA TO S3 + UPDATE GLUE DATA CATALOG
 # ==========================================================
 
+# ==========================================================
+# WRITE DATA TO S3 + UPDATE GLUE DATA CATALOG
+# ==========================================================
+
 def write_to_gold_catalog(
     df,
     table_name,
@@ -2684,12 +2691,12 @@ def write_to_gold_catalog(
 
     # ======================================================
     # INCREMENTAL LOAD
-    # Delete ONLY affected partition folders first
+    # Delete ONLY affected partition folders
     # ======================================================
 
     if (
-            LOAD_MODE == "INCREMENTAL"
-            and affected_partitions_df is not None
+        LOAD_MODE == "INCREMENTAL"
+        and affected_partitions_df is not None
     ):
 
         affected_rows = (
@@ -2704,15 +2711,17 @@ def write_to_gold_catalog(
             partition_values = []
 
             for column in partition_columns:
+
                 value = row[column]
+
                 partition_values.append(
                     f"{column}={value}"
                 )
 
             partition_path = (
-                    target_path
-                    + "/".join(partition_values)
-                    + "/"
+                target_path
+                + "/".join(partition_values)
+                + "/"
             )
 
             logger.info(
@@ -2778,7 +2787,7 @@ def write_to_gold_catalog(
 
         verification_df.printSchema()
 
-    except Exception as e:
+    except Exception:
 
         logger.exception(
             f"{table_name}: S3 verification FAILED"
@@ -2996,7 +3005,10 @@ def upsert_gold_table(
             existing_df = (
                 spark.read
                 .parquet(*partition_paths)
+                .cache()
             )
+
+            existing_df.count()
 
         except Exception:
 
@@ -3524,9 +3536,7 @@ upsert_gold_table(
     "dim_customer",
     ["customer_id"],
     ["_bucket"],
-    deleted_customers_df
-    if LOAD_MODE == "INCREMENTAL"
-    else None
+    None
 )
 
 upsert_gold_table(
@@ -3691,16 +3701,16 @@ write_gold_change_feed(
     change_timestamp
 )
 
-if LOAD_MODE == "INCREMENTAL":
-
-    write_gold_change_feed(
-        deleted_customers_df,
-        "dim_customer",
-        ["customer_id"],
-        "DELETE",
-        pipeline_run_id,
-        change_timestamp
-    )
+# if LOAD_MODE == "INCREMENTAL":
+#
+#     write_gold_change_feed(
+#         deleted_customers_df,
+#         "dim_customer",
+#         ["customer_id"],
+#         "DELETE",
+#         pipeline_run_id,
+#         change_timestamp
+#     )
 
 
 # ==========================================================

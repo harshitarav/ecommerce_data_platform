@@ -295,6 +295,12 @@ try:
     )
 
     validate_duplicates(
+        fact_payments_df,
+        "fact_payments",
+        "order_id"
+    )
+
+    validate_duplicates(
         fact_sales_daily_df,
         "fact_sales_daily",
         "purchase_date"
@@ -1242,6 +1248,36 @@ try:
 
     logger.info(
         "Payment Customer Referential Integrity validation completed."
+    )
+
+    # Payment Order Referential Integrity Validation
+    invalid_payment_orders = (
+        fact_payments_df
+        .join(
+            fact_sales_df.select("order_id").distinct(),
+            "order_id",
+            "left_anti"
+        )
+        .count()
+    )
+
+    status = (
+        "PASS"
+        if invalid_payment_orders == 0
+        else "FAIL"
+    )
+
+    report.add_result(
+        validation_name="Payment Order Referential Integrity",
+        status=status,
+        severity="CRITICAL",
+        expected=0,
+        actual=invalid_payment_orders,
+        remarks="All payment orders must exist in fact_sales."
+    )
+
+    logger.info(
+        "Payment Order Referential Integrity validation completed."
     )
 
     report_path = report.write_report()
