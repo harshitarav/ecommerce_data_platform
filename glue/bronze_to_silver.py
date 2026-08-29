@@ -1837,6 +1837,276 @@ def process_shipment():
             message="Shipment Bronze to Silver ETL finished"
         )
 
+def process_shipment_api():
+
+    logger = ETLLogger(
+        job_name=args["JOB_NAME"],
+        layer="silver",
+        table_name="shipment_api"
+    )
+
+    try:
+
+        logger.info(
+            event="JOB_START",
+            message="Shipment API Bronze to Silver ETL started"
+        )
+
+        # =====================================================
+        # 1. Read new API Bronze data
+        # =====================================================
+
+        shipment_api_df = read_bronze_incremental(
+            "shipments",
+            "shipment_api_bronze"
+        )
+
+        if shipment_api_df.rdd.isEmpty():
+
+            logger.info(
+                event="NO_NEW_DATA",
+                message="No new Shipment API Bronze data"
+            )
+
+            return
+
+        shipment_api_df.printSchema()
+
+        shipment_api_df.select(
+            F.size("data").alias("shipments_in_page"),
+            F.col("pagination.total_records").alias("total_records"),
+            F.col("pagination.offset").alias("offset")
+        ).show(20, False)
+
+        rows_read = shipment_api_df.count()
+
+        logger.info(
+            event="ROWS_READ",
+            message="API Bronze rows read",
+            rows_read=rows_read
+        )
+
+        # =====================================================
+        # 2. Flatten data[]
+        # =====================================================
+
+        shipment_df = (
+            shipment_api_df
+            .select(
+                F.explode("data").alias("shipment")
+            )
+            .select(
+                "shipment.vendor_shipment_id",
+                "shipment.tracking_number",
+                "shipment.carrier",
+                "shipment.status",
+                "shipment.estimated_delivery",
+                "shipment.last_updated",
+                "shipment.tracking_events"
+            )
+        )
+
+        logger.info(
+            event="FLATTEN_SHIPMENT_DATA",
+            message="API data array flattened into shipment rows"
+        )
+
+        # =====================================================
+        # 3. Convert timestamps
+        # =====================================================
+
+        shipment_df = (
+            shipment_df
+            .withColumn(
+                "estimated_delivery",
+                F.to_timestamp(
+                    "estimated_delivery"
+                )
+            )
+            .withColumn(
+                "last_updated",
+                F.to_timestamp(
+                    "last_updated"
+                )
+            )
+        )
+
+        # =====================================================
+        # 4. Vendor shipment current status
+        # =====================================================
+
+        vendor_status_df = (
+            shipment_df
+            .select(
+                "vendor_shipment_id",
+                "tracking_number",
+                "carrier",
+                "status",
+                "estimated_delivery",
+                "last_updated"
+            )
+        )
+
+        # -----------------------------------------------------
+        # Keep latest record per tracking number
+        # -----------------------------------------------------
+
+        status_window = (
+            Window
+            .partitionBy("tracking_number")
+            .orderBy(
+                F.col("last_updated")
+                .desc_nulls_last()
+            )
+        )
+
+        vendor_status_df = (
+            vendor_status_df
+            .withColumn(
+                "_row_number",
+                F.row_number().over(
+                    status_window
+                )
+            )
+            .filter(
+                F.col("_row_number") == 1
+            )
+            .drop("_row_number")
+        )
+
+        # -----------------------------------------------------
+        # Existing Silver transformations
+        # -----------------------------------------------------
+
+        vendor_status_df = trim_string_columns(
+            vendor_status_df
+        )
+
+        vendor_status_df = handle_null_values(
+            vendor_status_df
+        )
+
+        vendor_status_df = standardize_values(
+            vendor_status_df
+        )
+
+        logger.info(
+            event="VENDOR_STATUS_TRANSFORMED",
+            message="Vendor shipment status transformation completed"
+        )
+
+        # =====================================================
+        # 5. Technical metadata + Silver upsert
+        # =====================================================
+
+        upsert_silver(
+            changes_df=vendor_status_df,
+            table_name="shipment_vendor_status",
+            primary_keys=["tracking_number"],
+            order_column="last_updated"
+        )
+
+        logger.info(
+            event="VENDOR_STATUS_WRITTEN",
+            message="Shipment vendor status Silver upsert completed"
+        )
+
+        # =====================================================
+        # 6. Flatten tracking_events[]
+        # =====================================================
+
+        tracking_events_df = (
+            shipment_df
+            .select(
+                "vendor_shipment_id",
+                "tracking_number",
+                F.explode(
+                    "tracking_events"
+                ).alias("event")
+            )
+            .select(
+                "vendor_shipment_id",
+                "tracking_number",
+                "event.event_id",
+                "event.status",
+                F.to_timestamp(
+                    F.col("event.timestamp")
+                ).alias(
+                    "event_timestamp"
+                ),
+                "event.location"
+            )
+        )
+
+        # =====================================================
+        # 7. Remove duplicate events
+        # =====================================================
+
+        tracking_events_df = (
+            tracking_events_df
+            .dropDuplicates(
+                ["event_id"]
+            )
+        )
+
+        # -----------------------------------------------------
+        # Existing Silver transformations
+        # -----------------------------------------------------
+
+        tracking_events_df = trim_string_columns(
+            tracking_events_df
+        )
+
+        tracking_events_df = handle_null_values(
+            tracking_events_df
+        )
+
+        tracking_events_df = standardize_values(
+            tracking_events_df
+        )
+
+        logger.info(
+            event="TRACKING_EVENTS_TRANSFORMED",
+            message="Tracking events transformation completed"
+        )
+
+        # =====================================================
+        # 8. Silver upsert for tracking events
+        # =====================================================
+
+        upsert_silver(
+            changes_df=tracking_events_df,
+            table_name="shipment_tracking_events",
+            primary_keys=["event_id"],
+            order_column="event_timestamp"
+        )
+
+        logger.info(
+            event="TRACKING_EVENTS_WRITTEN",
+            message="Shipment tracking events Silver upsert completed"
+        )
+
+        logger.info(
+            event="JOB_SUCCESS",
+            message="Shipment API Bronze to Silver ETL completed successfully"
+        )
+
+    except Exception as e:
+
+        logger.error(
+            event="JOB_FAILED",
+            message=str(e)
+        )
+
+        raise
+
+    finally:
+
+        logger.info(
+            event="JOB_END",
+            message="Shipment API Bronze to Silver ETL finished"
+        )
+
 def process_geolocation():
 
     logger = ETLLogger(
@@ -2026,6 +2296,10 @@ def main():
     process_shipment()
 
     process_geolocation()
+
+    # Shipment Vendor API
+
+    process_shipment_api()
 
     job.commit()
 

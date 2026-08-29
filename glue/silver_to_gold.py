@@ -91,9 +91,12 @@ GOLD_TABLE_PATHS = {
 
     "fact_sales": f"{gold_path}facts/fact_sales/",
     "fact_payments": f"{gold_path}facts/fact_payments/",
+    "fact_shipment_delivery": f"{gold_path}facts/fact_shipment_delivery/",
+    "fact_tracking_event": f"{gold_path}facts/fact_tracking_event/",
 
     "fact_sales_daily": f"{gold_path}marts/fact_sales_daily/",
     "inventory_summary": f"{gold_path}marts/inventory_summary/",
+    "shipment_delivery_daily": f"{gold_path}marts/shipment_delivery_daily/",
 }
 
 # ==========================================================
@@ -335,7 +338,9 @@ TABLE_KEY_COLUMNS = {
     "customers": ["customer_id"],
     "products": ["product_id"],
     "sellers": ["seller_id"],
-    "inventory": ["inventory_id"]
+    "inventory": ["inventory_id"],
+    "shipment_vendor_status": ["tracking_number"],
+    "shipment_tracking_events": ["event_id"]
 }
 
 
@@ -547,12 +552,42 @@ changed_customers_df = None
 changed_products_df = None
 changed_sellers_df = None
 changed_inventory_df = None
+changed_shipment_vendor_status_df = None
+changed_shipment_tracking_events_df = None
+
+changed_shipment_vendor_status = None
+changed_shipment_tracking_events = None
 
 changed_orders = None
 changed_customers = None
 changed_products = None
 changed_sellers = None
 changed_inventory = None
+
+# ==========================================================
+# CHECK WHETHER AN S3 PREFIX EXISTS
+# ==========================================================
+
+def s3_prefix_exists(s3_path):
+
+    parsed = urlparse(s3_path)
+
+    bucket = parsed.netloc
+    prefix = parsed.path.lstrip("/")
+
+    response = s3_client.list_objects_v2(
+        Bucket=bucket,
+        Prefix=prefix,
+        MaxKeys=1
+    )
+
+    return "Contents" in response
+
+# ==========================================================
+# DEFAULT API GOLD LOAD FLAG
+# ==========================================================
+
+API_GOLD_INITIAL_LOAD = False
 
 if LOAD_MODE == "FULL":
 
@@ -607,6 +642,18 @@ if LOAD_MODE == "FULL":
     inventory_df = read_full_table(
         silver_db,
         "inventory"
+    )
+
+    # Shipment API Silver
+
+    shipment_vendor_status_df = read_full_table(
+        silver_db,
+        "shipment_vendor_status"
+    )
+
+    shipment_tracking_events_df = read_full_table(
+        silver_db,
+        "shipment_tracking_events"
     )
 
 else:
@@ -694,6 +741,18 @@ else:
     changed_inventory_df = get_table_changes(
         silver_changes_df,
         "inventory"
+    )
+
+    # Shipment API changes
+
+    changed_shipment_vendor_status_df = get_table_changes(
+        silver_changes_df,
+        "shipment_vendor_status"
+    )
+
+    changed_shipment_tracking_events_df = get_table_changes(
+        silver_changes_df,
+        "shipment_tracking_events"
     )
 
     logger.info(
@@ -820,6 +879,94 @@ else:
         .distinct()
         .cache()
     )
+
+    changed_shipment_vendor_status = (
+        changed_shipment_vendor_status_df
+        .select("tracking_number")
+        .distinct()
+        .cache()
+    )
+
+    changed_shipment_tracking_events = (
+        changed_shipment_tracking_events_df
+        .select("event_id")
+        .distinct()
+        .cache()
+    )
+
+    # ==========================================================
+    # CHECK WHETHER API GOLD TABLES ALREADY EXIST
+    # ==========================================================
+
+    API_GOLD_INITIAL_LOAD = not (
+            s3_prefix_exists(
+                GOLD_TABLE_PATHS["fact_shipment_delivery"]
+            )
+            and
+            s3_prefix_exists(
+                GOLD_TABLE_PATHS["fact_tracking_event"]
+            )
+    )
+
+    logger.info(
+        f"API Gold Initial Load = {API_GOLD_INITIAL_LOAD}"
+    )
+
+    # ======================================================
+    # READ CURRENT API SILVER STATE
+    # ======================================================
+
+    # ==========================================================
+    # API GOLD BOOTSTRAP / INCREMENTAL
+    # ==========================================================
+
+    if API_GOLD_INITIAL_LOAD:
+
+        logger.info(
+            "API Gold tables do not exist. "
+            "Loading full current API Silver state."
+        )
+
+        shipment_vendor_status_df = read_full_table(
+            silver_db,
+            "shipment_vendor_status"
+        )
+
+        shipment_tracking_events_df = read_full_table(
+            silver_db,
+            "shipment_tracking_events"
+        )
+
+    else:
+
+        logger.info(
+            "API Gold tables exist. "
+            "Reading only affected API Silver state."
+        )
+
+        shipment_vendor_status_df = read_current_records_for_keys(
+            silver_db,
+            "shipment_vendor_status",
+            changed_shipment_vendor_status,
+            ["tracking_number"]
+        )
+
+        affected_tracking_numbers = (
+            shipment_vendor_status_df
+            .select("tracking_number")
+            .distinct()
+        )
+
+        shipment_tracking_events_df = (
+            spark.table(
+                f"{silver_db}.shipment_tracking_events"
+            )
+            .join(
+                affected_tracking_numbers,
+                ["tracking_number"],
+                "inner"
+            )
+        )
 
     logger.info(
         f"Affected orders = {changed_orders.count()}"
@@ -1461,6 +1608,211 @@ fact_payments_df = (
 
 fact_payments_df = fact_payments_df.cache()
 
+# ==========================================================
+# FACT SHIPMENT DELIVERY
+#
+# Grain:
+# One row = One vendor shipment / tracking number
+# ==========================================================
+
+shipment_delivery_df = (
+    shipment_vendor_status_df
+    .select(
+        "vendor_shipment_id",
+        "tracking_number",
+        "carrier",
+        "status",
+        "estimated_delivery",
+        "last_updated"
+    )
+)
+
+# ----------------------------------------------------------
+# Find latest tracking event for current location
+# ----------------------------------------------------------
+
+latest_event_window = (
+    Window
+    .partitionBy("tracking_number")
+    .orderBy(
+        F.col("event_timestamp")
+        .desc_nulls_last()
+    )
+)
+
+latest_event_df = (
+    shipment_tracking_events_df
+    .withColumn(
+        "_rn",
+        F.row_number().over(
+            latest_event_window
+        )
+    )
+    .filter(
+        F.col("_rn") == 1
+    )
+    .drop("_rn")
+    .select(
+        "tracking_number",
+        F.col("location").alias(
+            "current_location"
+        ),
+        F.col("event_timestamp").alias(
+            "last_event_timestamp"
+        )
+    )
+)
+
+# ----------------------------------------------------------
+# Join current shipment status + latest tracking event
+# ----------------------------------------------------------
+
+fact_shipment_delivery_df = (
+    shipment_delivery_df
+    .join(
+        latest_event_df,
+        ["tracking_number"],
+        "left"
+    )
+)
+
+# ----------------------------------------------------------
+# Business KPI columns
+# ----------------------------------------------------------
+
+fact_shipment_delivery_df = (
+    fact_shipment_delivery_df
+
+    .withColumn(
+        "is_delivered",
+        F.when(
+            F.upper(F.col("status")) == "DELIVERED",
+            1
+        ).otherwise(0)
+    )
+
+    .withColumn(
+        "is_in_transit",
+        F.when(
+            F.upper(F.col("status")).isin(
+                "IN_TRANSIT",
+                "OUT_FOR_DELIVERY"
+            ),
+            1
+        ).otherwise(0)
+    )
+
+    .withColumn(
+        "is_delayed",
+        F.when(
+            (
+                F.col("estimated_delivery").isNotNull()
+            )
+            &
+            (
+                F.current_timestamp()
+                > F.col("estimated_delivery")
+            )
+            &
+            (
+                F.upper(F.col("status"))
+                != "DELIVERED"
+            ),
+            1
+        ).otherwise(0)
+    )
+
+    .withColumn(
+        "delivery_delay_days",
+        F.when(
+            F.col("estimated_delivery").isNotNull(),
+            F.datediff(
+                F.to_date(
+                    F.col("last_event_timestamp")
+                ),
+                F.to_date(
+                    F.col("estimated_delivery")
+                )
+            )
+        )
+    )
+)
+
+# ----------------------------------------------------------
+# Deterministic Gold bucket
+# ----------------------------------------------------------
+
+fact_shipment_delivery_df = (
+    fact_shipment_delivery_df
+    .withColumn(
+        "_bucket",
+        F.pmod(
+            F.abs(
+                F.hash(
+                    F.col(
+                        "tracking_number"
+                    ).cast("string")
+                )
+            ),
+            F.lit(32)
+        )
+    )
+)
+
+# ==========================================================
+# FACT TRACKING EVENT
+#
+# Grain:
+# One row = One tracking event
+# ==========================================================
+
+fact_tracking_event_df = (
+    shipment_tracking_events_df
+    .select(
+        "event_id",
+        "tracking_number",
+        "vendor_shipment_id",
+        "status",
+        "event_timestamp",
+        "location"
+    )
+)
+
+# ----------------------------------------------------------
+# Business date
+# ----------------------------------------------------------
+
+fact_tracking_event_df = (
+    fact_tracking_event_df
+    .withColumn(
+        "event_date",
+        F.to_date(
+            "event_timestamp"
+        )
+    )
+)
+
+# ----------------------------------------------------------
+# Deterministic Gold bucket
+# ----------------------------------------------------------
+
+fact_tracking_event_df = (
+    fact_tracking_event_df
+    .withColumn(
+        "_bucket",
+        F.pmod(
+            F.abs(
+                F.hash(
+                    F.col(
+                        "event_id"
+                    ).cast("string")
+                )
+            ),
+            F.lit(32)
+        )
+    )
+)
+
 # ----------------------------------
 # Validate Fact Tables
 # ----------------------------------
@@ -1902,6 +2254,140 @@ logger.info(
 )
 
 # ==========================================================
+# SHIPMENT DELIVERY DAILY MART
+#
+# Grain:
+# One row = One snapshot date + carrier
+#
+# IMPORTANT:
+# For incremental loads, rebuild the snapshot using:
+#   existing Gold shipment state
+#   +
+#   current changed shipment state
+# ==========================================================
+
+if LOAD_MODE == "FULL" or API_GOLD_INITIAL_LOAD:
+
+    logger.info(
+        "Building Shipment Delivery Daily from full shipment state."
+    )
+
+    shipment_daily_source_df = (
+        fact_shipment_delivery_df
+    )
+
+else:
+
+    logger.info(
+        "Rebuilding Shipment Delivery Daily "
+        "from existing Gold + changed shipment records."
+    )
+
+    # ------------------------------------------------------
+    # Read existing Gold shipment fact
+    # ------------------------------------------------------
+
+    existing_gold_shipment_df = (
+        spark.read
+        .parquet(
+            GOLD_TABLE_PATHS[
+                "fact_shipment_delivery"
+            ]
+        )
+    )
+
+    # ------------------------------------------------------
+    # Remove old versions of changed tracking numbers
+    # ------------------------------------------------------
+
+    changed_tracking_numbers = (
+        fact_shipment_delivery_df
+        .select(
+            "tracking_number"
+        )
+        .distinct()
+    )
+
+    existing_gold_shipment_df = (
+        existing_gold_shipment_df
+        .join(
+            changed_tracking_numbers,
+            ["tracking_number"],
+            "left_anti"
+        )
+    )
+
+    # ------------------------------------------------------
+    # Combine existing + latest changed shipment state
+    # ------------------------------------------------------
+
+    shipment_daily_source_df = (
+        existing_gold_shipment_df
+        .unionByName(
+            fact_shipment_delivery_df,
+            allowMissingColumns=True
+        )
+    )
+
+# ==========================================================
+# Build daily shipment snapshot
+# ==========================================================
+
+shipment_delivery_daily_df = (
+
+    shipment_daily_source_df
+
+    .withColumn(
+        "snapshot_date",
+        F.current_date()
+    )
+
+    .groupBy(
+        "snapshot_date",
+        "carrier"
+    )
+
+    .agg(
+
+        F.countDistinct(
+            "tracking_number"
+        ).alias(
+            "total_shipments"
+        ),
+
+        F.sum(
+            "is_delivered"
+        ).alias(
+            "delivered_shipments"
+        ),
+
+        F.sum(
+            "is_in_transit"
+        ).alias(
+            "in_transit_shipments"
+        ),
+
+        F.sum(
+            "is_delayed"
+        ).alias(
+            "delayed_shipments"
+        ),
+
+        F.avg(
+            "delivery_delay_days"
+        ).alias(
+            "avg_delivery_delay_days"
+        )
+    )
+)
+
+logger.info(
+    f"Shipment Delivery Daily rows = "
+    f"{shipment_delivery_daily_df.count()}"
+)
+
+
+# ==========================================================
 # READ EXISTING GOLD FACT SALES
 # ONLY REQUIRED BUCKETS
 # ==========================================================
@@ -2113,6 +2599,95 @@ def read_existing_gold_fact_sales_for_keys(
 deleted_fact_sales_rows_df = None
 deleted_fact_sales_keys_df = None
 
+# ==========================================================
+# CLASSIFY DIMENSION CHANGES USING SILVER CDC OPERATION
+# ==========================================================
+
+def classify_dimension_changes(
+    gold_df,
+    silver_changes_df,
+    key_column
+):
+    """
+    For dimension tables, INSERT / UPDATE / DELETE is taken
+    from the Silver change manifest.
+
+    IMPORTANT:
+    Do NOT infer INSERT/UPDATE from current Gold state.
+
+    This makes the Gold change feed retry-safe:
+    if Gold S3 was already updated but Snowflake failed,
+    the original Silver INSERT remains an INSERT.
+    """
+
+    if (
+        silver_changes_df is None
+        or silver_changes_df.rdd.isEmpty()
+    ):
+        return None, None, None
+
+    # Keep the latest Silver event for each business key
+    latest_changes = (
+        silver_changes_df
+        .withColumn(
+            "rn",
+            F.row_number().over(
+                Window
+                .partitionBy(key_column)
+                .orderBy(
+                    F.col("changed_at").desc()
+                )
+            )
+        )
+        .filter(F.col("rn") == 1)
+        .drop("rn")
+    )
+
+    insert_keys = (
+        latest_changes
+        .filter(F.col("operation") == "INSERT")
+        .select(key_column)
+        .distinct()
+    )
+
+    update_keys = (
+        latest_changes
+        .filter(F.col("operation") == "UPDATE")
+        .select(key_column)
+        .distinct()
+    )
+
+    delete_keys = (
+        latest_changes
+        .filter(F.col("operation") == "DELETE")
+        .select(key_column)
+        .distinct()
+    )
+
+    insert_df = (
+        gold_df
+        .join(
+            insert_keys,
+            key_column,
+            "inner"
+        )
+    )
+
+    update_df = (
+        gold_df
+        .join(
+            update_keys,
+            key_column,
+            "inner"
+        )
+    )
+
+    return (
+        insert_df,
+        update_df,
+        delete_keys
+    )
+
 if LOAD_MODE == "INCREMENTAL":
 
     # ------------------------------------------------------
@@ -2244,6 +2819,12 @@ if LOAD_MODE == "FULL":
 
     gold_inventory_summary = inventory_summary_df
 
+    gold_fact_shipment_delivery = fact_shipment_delivery_df
+
+    gold_fact_tracking_event = fact_tracking_event_df
+
+    gold_shipment_delivery_daily = shipment_delivery_daily_df
+
 
 else:
 
@@ -2285,6 +2866,12 @@ else:
     # ======================================================
 
     gold_dim_inventory = dim_inventory_df
+
+    gold_fact_shipment_delivery = fact_shipment_delivery_df
+
+    gold_fact_tracking_event = fact_tracking_event_df
+
+    gold_shipment_delivery_daily = shipment_delivery_daily_df
 
     # ======================================================
     # SALES DAILY
@@ -3404,48 +3991,56 @@ if LOAD_MODE == "INCREMENTAL":
 
     gold_dim_customer.select("customer_id").show(20, truncate=False)
 
-    customer_insert_df, customer_update_df = (
-        classify_gold_changes(
-            gold_dim_customer,
-            "dim_customer",
-            ["customer_id"]
-        )
+    (
+        customer_insert_df,
+        customer_update_df,
+        deleted_customer_keys_df
+    ) = classify_dimension_changes(
+        gold_dim_customer,
+        changed_customers_df,
+        "customer_id"
     )
 
     # ------------------------------------------------------
     # PRODUCT
     # ------------------------------------------------------
 
-    product_insert_df, product_update_df = (
-        classify_gold_changes(
-            gold_dim_product,
-            "dim_product",
-            ["product_id"]
-        )
+    (
+        product_insert_df,
+        product_update_df,
+        deleted_product_keys_df
+    ) = classify_dimension_changes(
+        gold_dim_product,
+        changed_products_df,
+        "product_id"
     )
 
     # ------------------------------------------------------
     # SELLER
     # ------------------------------------------------------
 
-    seller_insert_df, seller_update_df = (
-        classify_gold_changes(
-            gold_dim_seller,
-            "dim_seller",
-            ["seller_id"]
-        )
+    (
+        seller_insert_df,
+        seller_update_df,
+        deleted_seller_keys_df
+    ) = classify_dimension_changes(
+        gold_dim_seller,
+        changed_sellers_df,
+        "seller_id"
     )
 
     # ------------------------------------------------------
     # INVENTORY
     # ------------------------------------------------------
 
-    inventory_insert_df, inventory_update_df = (
-        classify_gold_changes(
-            gold_dim_inventory,
-            "dim_inventory",
-            ["inventory_id"]
-        )
+    (
+        inventory_insert_df,
+        inventory_update_df,
+        deleted_inventory_keys_df
+    ) = classify_dimension_changes(
+        gold_dim_inventory,
+        changed_inventory_df,
+        "inventory_id"
     )
 
     # ------------------------------------------------------
@@ -3474,6 +4069,65 @@ if LOAD_MODE == "INCREMENTAL":
             ["order_id"]
         )
     )
+
+    # ======================================================
+    # API GOLD TABLES
+    # ======================================================
+
+    if API_GOLD_INITIAL_LOAD:
+
+        # ----------------------------------------------
+        # First-ever load of API Gold tables
+        # ----------------------------------------------
+
+        fact_shipment_delivery_insert_df = (
+            gold_fact_shipment_delivery
+        )
+
+        fact_shipment_delivery_update_df = None
+
+        fact_tracking_event_insert_df = (
+            gold_fact_tracking_event
+        )
+
+        fact_tracking_event_update_df = None
+
+        shipment_delivery_daily_insert_df = (
+            gold_shipment_delivery_daily
+        )
+
+        shipment_delivery_daily_update_df = None
+
+
+    else:
+
+        # ----------------------------------------------
+        # Normal incremental processing
+        # ----------------------------------------------
+
+        fact_shipment_delivery_insert_df, fact_shipment_delivery_update_df = (
+            classify_gold_changes(
+                gold_fact_shipment_delivery,
+                "fact_shipment_delivery",
+                ["tracking_number"]
+            )
+        )
+
+        fact_tracking_event_insert_df, fact_tracking_event_update_df = (
+            classify_gold_changes(
+                gold_fact_tracking_event,
+                "fact_tracking_event",
+                ["event_id"]
+            )
+        )
+
+        shipment_delivery_daily_insert_df, shipment_delivery_daily_update_df = (
+            classify_gold_changes(
+                gold_shipment_delivery_daily,
+                "shipment_delivery_daily",
+                ["snapshot_date", "carrier"]
+            )
+        )
 
     # ------------------------------------------------------
     # SALES DAILY
@@ -3524,6 +4178,15 @@ else:
 
     fact_payments_insert_df = gold_fact_payments
     fact_payments_update_df = None
+
+    fact_shipment_delivery_insert_df = gold_fact_shipment_delivery
+    fact_shipment_delivery_update_df = None
+
+    fact_tracking_event_insert_df = gold_fact_tracking_event
+    fact_tracking_event_update_df = None
+
+    shipment_delivery_daily_insert_df = gold_shipment_delivery_daily
+    shipment_delivery_daily_update_df = None
 
     sales_daily_insert_df = gold_sales_daily
     sales_daily_update_df = None
@@ -3587,6 +4250,47 @@ upsert_gold_table(
     deleted_orders_df
     if LOAD_MODE == "INCREMENTAL"
     else None
+)
+
+# ==========================================================
+# FACT SHIPMENT DELIVERY
+# ==========================================================
+
+upsert_gold_table(
+    gold_fact_shipment_delivery,
+    "fact_shipment_delivery",
+    ["tracking_number"],
+    ["_bucket"],
+    None,
+    None,
+    True
+)
+
+# ==========================================================
+# FACT TRACKING EVENT
+# ==========================================================
+
+upsert_gold_table(
+    gold_fact_tracking_event,
+    "fact_tracking_event",
+    ["event_id"],
+    ["_bucket"],
+    None,
+    None,
+    True
+)
+# ==========================================================
+# SHIPMENT DELIVERY DAILY
+# ==========================================================
+
+upsert_gold_table(
+    gold_shipment_delivery_daily,
+    "shipment_delivery_daily",
+    ["snapshot_date", "carrier"],
+    ["snapshot_date"],
+    None,
+    None,
+    False
 )
 
 upsert_gold_table(
@@ -3701,16 +4405,16 @@ write_gold_change_feed(
     change_timestamp
 )
 
-# if LOAD_MODE == "INCREMENTAL":
-#
-#     write_gold_change_feed(
-#         deleted_customers_df,
-#         "dim_customer",
-#         ["customer_id"],
-#         "DELETE",
-#         pipeline_run_id,
-#         change_timestamp
-#     )
+if LOAD_MODE == "INCREMENTAL":
+
+    write_gold_change_feed(
+        deleted_customers_df,
+        "dim_customer",
+        ["customer_id"],
+        "DELETE",
+        pipeline_run_id,
+        change_timestamp
+    )
 
 
 # ==========================================================
@@ -3875,6 +4579,74 @@ write_gold_change_feed(
     fact_payments_update_df,
     "fact_payments",
     ["order_id"],
+    "UPDATE",
+    pipeline_run_id,
+    change_timestamp
+)
+
+# ==========================================================
+# FACT SHIPMENT DELIVERY CHANGE FEED
+# ==========================================================
+
+write_gold_change_feed(
+    fact_shipment_delivery_insert_df,
+    "fact_shipment_delivery",
+    ["tracking_number"],
+    "INSERT",
+    pipeline_run_id,
+    change_timestamp
+)
+
+write_gold_change_feed(
+    fact_shipment_delivery_update_df,
+    "fact_shipment_delivery",
+    ["tracking_number"],
+    "UPDATE",
+    pipeline_run_id,
+    change_timestamp
+)
+
+
+# ==========================================================
+# FACT TRACKING EVENT CHANGE FEED
+# ==========================================================
+
+write_gold_change_feed(
+    fact_tracking_event_insert_df,
+    "fact_tracking_event",
+    ["event_id"],
+    "INSERT",
+    pipeline_run_id,
+    change_timestamp
+)
+
+write_gold_change_feed(
+    fact_tracking_event_update_df,
+    "fact_tracking_event",
+    ["event_id"],
+    "UPDATE",
+    pipeline_run_id,
+    change_timestamp
+)
+
+
+# ==========================================================
+# SHIPMENT DELIVERY DAILY CHANGE FEED
+# ==========================================================
+
+write_gold_change_feed(
+    shipment_delivery_daily_insert_df,
+    "shipment_delivery_daily",
+    ["snapshot_date", "carrier"],
+    "INSERT",
+    pipeline_run_id,
+    change_timestamp
+)
+
+write_gold_change_feed(
+    shipment_delivery_daily_update_df,
+    "shipment_delivery_daily",
+    ["snapshot_date", "carrier"],
     "UPDATE",
     pipeline_run_id,
     change_timestamp
