@@ -111,8 +111,8 @@ The resulting Gold datasets are loaded into Snowflake for analytical consumption
 
 ## ⭐ Star Schema Design
 The Gold layer follows a **star-schema-based dimensional model** designed for analytical querying and reporting.
-### Fact Tables
 
+### Fact Tables
 Fact tables capture measurable business events at a defined grain:
 
 - **`fact_sales`** - One row per order item sold; combines order, product, seller, shipment and review information.
@@ -121,7 +121,6 @@ Fact tables capture measurable business events at a defined grain:
 - **`fact_tracking_event`** - One row per tracking event; captures shipment status, event timestamp and location.
 
 ### Dimension Tables
-
 Dimension tables provide descriptive business context for analytical queries:
 
 - **`dim_customer`** — Customer attributes such as location, customer identifiers and loyalty points.
@@ -130,7 +129,6 @@ Dimension tables provide descriptive business context for analytical queries:
 - **`dim_inventory`** — Product inventory by warehouse, including available, reserved and safety stock.
 
 ### Analytical Marts
-
 Additional Gold-level aggregate tables are created for commonly required analytical queries:
 
 - **`fact_sales_daily`** — Daily sales metrics including total orders, items sold, sales, average order value, freight and late deliveries.
@@ -147,8 +145,6 @@ Additional Gold-level aggregate tables are created for commonly required analyti
 - Gold data is partitioned using deterministic hash buckets for efficient incremental processing.
 
 ## 🎯 Key Outcomes
-## 🎯 Key Outcomes
-
 - Designed and implemented an **end-to-end cloud-based e-commerce data platform** using AWS, Apache Airflow, PySpark, and Snowflake.
 - Built a **multi-source ingestion framework** supporting RDS, external files, and REST API data.
 - Implemented **scheduled batch processing with incremental ingestion and transformation**, avoiding unnecessary full-data reprocessing.
