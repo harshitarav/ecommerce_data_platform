@@ -1,7 +1,7 @@
 # E-Commerce Data Engineering Platform
 
 ## 📌 Project Overview
-E-commerce businesses generate data across multiple operational systems and external sources. These data's is often stored in different formats and systems, making it difficult to provide a consistent and reliable dataset for analytics.
+E-commerce businesses generate data across multiple operational systems and external sources. This data is often stored across different formats and systems, making it difficult to provide a consistent and reliable dataset for analytics.
 
 This project builds an end-to-end **Cloud Data Platform using AWS** that brings these different data sources together and transforms them into reliable, analytics-ready datasets for the downstream analytics.
 
@@ -108,6 +108,7 @@ The Gold layer transforms validated Silver data into business-oriented dimension
 - Critical validation failures prevent the pipeline from progressing.
 
 The resulting Gold datasets are loaded into Snowflake for analytical consumption.
+Snowflake Stored Procedures handle incremental loading using MERGE operations, propagating INSERT, UPDATE, and DELETE changes from the Gold layer.
 
 ## ⭐ Star Schema Design
 The Gold layer follows a **star-schema-based dimensional model** designed for analytical querying and reporting.
