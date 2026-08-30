@@ -36,45 +36,50 @@ The pipeline follows a scheduled batch-processing approach, where data is collec
 - **GitHub Actions** – CI/CD deployment
 
 ## Data Pipeline
+The pipeline follows a **scheduled batch-processing architecture with incremental processing**. 
+Data is ingested from multiple sources, stored in the Bronze layer, transformed and validated 
+through the Silver layer, and modeled into business-ready datasets in the Gold layer before 
+being loaded into Snowflake.
 ### Bronze Layer — Raw Data
-The Bronze layer acts as the raw landing layer in Amazon S3. Data is stored with minimal transformation to preserve the original source information and provide a reliable recovery point for downstream processing.
+The Bronze layer acts as the raw landing layer in **Amazon S3**, preserving source data with minimal transformation for reliable downstream processing and recovery.
 
 **Ingestion:**
-- Amazon RDS → S3 Bronze
-- External CSV files → S3 Bronze
-- REST API responses → S3 Bronze
+- Amazon RDS - Database source
+- External CSV files - File-based source
+- REST API responses - Shipment/vendor data source
 
 **Processing:**
 - Initial full loads for historical data
-- Incremental ingestion for newly added or updated source records
+- Subsequent runs use Incremental ingestion for newly added or updated source records to avoid unnecessary reprocessing.
 - RDS incremental extraction using watermark-based processing
+- External CSV files are checked using file-level hash comparison to identify unchanged files.
 - API responses are retained in their raw JSON structure
 - Source data is organized by source type and dataset
 
 **Validation:**
 - Bronze focuses on preserving source data rather than applying business rules or aggressive data cleansing.
-- Schema and metadata are discovered using AWS Glue Crawlers and registered in the Glue Data Catalog.
-
+- AWS Glue Crawlers discover schemas and update the **Glue Data Catalog**.
+  
 ### Silver Layer — Cleaned & Validated Data
-The Silver layer converts raw Bronze data into standardized, structured datasets suitable for analytical processing.
+The Silver layer transforms raw Bronze data into clean, standardized and trusted datasets using **AWS Glue and PySpark**.
 
 **Transformations:**
-- Schema and data type standardization
+- Data type and schema standardization
 - Column normalization and data formatting
-- NULL handling and required-field processing
+- NULL handling 
 - Duplicate detection and deduplication
-- Flattening and structuring nested API shipment data
+- Flattening and structuring nested API data
 - Business-rule based transformations
 - Incremental inserts and updates
 - Soft-delete handling
 - Composite-key support
 - Hash-bucket based partition pruning for efficient incremental processing
+- Partition-aware incremental processing
 - Change manifest generation to identify affected records for downstream processing
 
 **Validation:**
-- Primary-key uniqueness
+- Primary-key uniqueness checks
 - Mandatory-field NULL checks
-- Required-field validation based on business conditions
 - Data type and format validation
 - Length and value-range validation
 - Timestamp and status consistency checks
@@ -82,7 +87,7 @@ The Silver layer converts raw Bronze data into standardized, structured datasets
 - Validation failures are classified by severity and can stop downstream processing.
 
 ### Gold Layer — Business-Ready Data
-The Gold layer transforms validated Silver data into business-oriented analytical structures optimized for reporting and analytics.
+The Gold layer transforms validated Silver data into business-oriented dimensional models and analytical marts optimized for reporting and analytics.
 
 **Transformations:**
 - Dimension table creation
@@ -90,8 +95,9 @@ The Gold layer transforms validated Silver data into business-oriented analytica
 - Business-level aggregations
 - Daily and summary analytical marts
 - Sales, payment, inventory, shipment and tracking analytics
+- Derived business metrics such as delivery duration, delivery delays and late-delivery indicators
 - Incremental processing using Silver change manifests and Gold watermarks
-- Incremental UPSERT processing for affected business entities
+- Incremental UPSERT processing for affected business entities and based on Silver change tracking
 
 **Validation:**
 - Referential integrity between fact and dimension tables
