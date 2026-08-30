@@ -35,6 +35,107 @@ The pipeline follows a scheduled batch-processing approach, where data is collec
 - **Git & GitHub** – Version control
 - **GitHub Actions** – CI/CD deployment
 
+## Data Pipeline
+### Bronze Layer — Raw Data
+The Bronze layer acts as the raw landing layer in Amazon S3. Data is stored with minimal transformation to preserve the original source information and provide a reliable recovery point for downstream processing.
+
+**Ingestion:**
+- Amazon RDS → S3 Bronze
+- External CSV files → S3 Bronze
+- REST API responses → S3 Bronze
+
+**Processing:**
+- Initial full loads for historical data
+- Incremental ingestion for newly added or updated source records
+- RDS incremental extraction using watermark-based processing
+- API responses are retained in their raw JSON structure
+- Source data is organized by source type and dataset
+
+**Validation:**
+- Bronze focuses on preserving source data rather than applying business rules or aggressive data cleansing.
+- Schema and metadata are discovered using AWS Glue Crawlers and registered in the Glue Data Catalog.
+
+### Silver Layer — Cleaned & Validated Data
+The Silver layer converts raw Bronze data into standardized, structured datasets suitable for analytical processing.
+
+**Transformations:**
+- Schema and data type standardization
+- Column normalization and data formatting
+- NULL handling and required-field processing
+- Duplicate detection and deduplication
+- Flattening and structuring nested API shipment data
+- Business-rule based transformations
+- Incremental inserts and updates
+- Soft-delete handling
+- Composite-key support
+- Hash-bucket based partition pruning for efficient incremental processing
+- Change manifest generation to identify affected records for downstream processing
+
+**Validation:**
+- Primary-key uniqueness
+- Mandatory-field NULL checks
+- Required-field validation based on business conditions
+- Data type and format validation
+- Length and value-range validation
+- Timestamp and status consistency checks
+- Domain/business-rule validation
+- Validation failures are classified by severity and can stop downstream processing.
+
+### Gold Layer — Business-Ready Data
+The Gold layer transforms validated Silver data into business-oriented analytical structures optimized for reporting and analytics.
+
+**Transformations:**
+- Dimension table creation
+- Fact table creation
+- Business-level aggregations
+- Daily and summary analytical marts
+- Sales, payment, inventory, shipment and tracking analytics
+- Incremental processing using Silver change manifests and Gold watermarks
+- Incremental UPSERT processing for affected business entities
+
+**Validation:**
+- Referential integrity between fact and dimension tables
+- Customer, product and seller relationship validation
+- Payment-to-customer and payment-to-order validation
+- Aggregation consistency checks
+- Inventory available/reserved/safety-stock reconciliation
+- Critical validation failures prevent the pipeline from progressing.
+
+The resulting Gold datasets are loaded into Snowflake for analytical consumption.
+
+## ⭐ Star Schema Design
+The Gold layer follows a **star-schema-based dimensional model** designed for analytical querying and reporting.
+### Fact Tables
+
+Fact tables capture measurable business events at a defined grain:
+
+- **`fact_sales`** - One row per order item sold; combines order, product, seller, shipment and review information.
+- **`fact_payments`** - One row per order; contains aggregated payment information such as payment type, installments and payment value.
+- **`fact_shipment_delivery`** - One row per vendor shipment / tracking number; contains shipment status, carrier, delivery indicators and delay metrics.
+- **`fact_tracking_event`** - One row per tracking event; captures shipment status, event timestamp and location.
+
+### Dimension Tables
+
+Dimension tables provide descriptive business context for analytical queries:
+
+- **`dim_customer`** — Customer attributes such as location, customer identifiers and loyalty points.
+- **`dim_product`** — Product attributes including category, dimensions, weight and product metadata.
+- **`dim_seller`** — Seller location and seller attributes.
+- **`dim_inventory`** — Product inventory by warehouse, including available, reserved and safety stock.
+
+### Analytical Marts
+
+Additional Gold-level aggregate tables are created for commonly required analytical queries:
+
+- **`fact_sales_daily`** — Daily sales metrics including total orders, items sold, sales, average order value, freight and late deliveries.
+- **`inventory_summary`** — Product-level inventory summary by warehouse.
+- **`shipment_delivery_daily`** — Daily shipment metrics by carrier, including delivered, in-transit and delayed shipments.
 
 
+### Key Modeling Decisions
 
+- **Fact grain is explicitly defined** to prevent double-counting and maintain consistent aggregations.
+- Business KPIs such as `total_order_value`, `delivery_days`, `delivery_delay_days`, `late_delivery_flag` and `review_category` are derived in the Gold layer.
+- Dimensions and facts are maintained separately to provide reusable business context for analytical queries.
+- Gold tables support **incremental INSERT, UPDATE and DELETE processing** using business keys and change tracking.
+- Gold data is partitioned using deterministic hash buckets for efficient incremental processing.
