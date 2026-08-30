@@ -14,4 +14,5 @@ The pipeline follows a scheduled batch-processing approach, where data is collec
 
 
 ## Architecture
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/72a85511-aefa-476b-bd90-04de3feee986" />
 
