@@ -145,3 +145,15 @@ Additional Gold-level aggregate tables are created for commonly required analyti
 - Dimensions and facts are maintained separately to provide reusable business context for analytical queries.
 - Gold tables support **incremental INSERT, UPDATE and DELETE processing** using business keys and change tracking.
 - Gold data is partitioned using deterministic hash buckets for efficient incremental processing.
+
+## 🎯 Key Outcomes
+- Built an **end-to-end e-commerce data platform** using a Bronze–Silver–Gold architecture on AWS.
+- Implemented **scheduled batch processing with incremental data ingestion**, reducing unnecessary reprocessing of previously processed data.
+- Integrated multiple data sources including **Amazon RDS, external CSV files, and REST API data** into a centralized S3 Data Lake.
+- Implemented **data quality and validation frameworks** across Silver and Gold layers to improve data reliability and prevent invalid data from progressing downstream.
+- Implemented **change tracking and incremental propagation** across the data pipeline using watermarks, Glue Job Bookmarks, change manifests, and incremental MERGE processing.
+- Built a **star-schema-based Gold layer** containing dimensions, fact tables, and analytical marts for business-oriented analytics.
+- Established **Snowflake as the analytical serving layer**, with incremental loading of Gold changes.
+- Automated the end-to-end workflow using **Apache Airflow**, including task dependencies, retries, and failure handling.
+- Implemented **CI/CD using GitHub Actions and Docker** for automated Lambda deployment and dependency packaging.
+- Created a reusable, production-oriented data platform capable of handling **new records, updates, deletes, schema changes, duplicate records, and data quality issues**.
