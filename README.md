@@ -17,5 +17,24 @@ The pipeline follows a scheduled batch-processing approach, where data is collec
 <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/72a85511-aefa-476b-bd90-04de3feee986" />
 
 ## 🛠️ Tools & Technologies
-- Incremental ingestion
+- **Amazon RDS (MySQL)** — Incremental database ingestion
+- **External CSV Files** — Batch file ingestion
+- **REST API** — API ingestion
+- **Python** — Ingestion ETL implementation
+- **AWS Lambda** — Serverless ingestion
+- **Amazon S3** — Data Lake storage for Bronze, Silver, Gold
+- **AWS Glue** — ETL processing
+- **PySpark** — Distributed data transformation
+- **AWS Glue Data Catalog** — Metadata and schema management
+- **AWS Glue Crawlers** — Schema discovery
+- **SQL** — Database and warehouse processing
+- **Snowflake** — Analytical data warehouse
+- **Snowflake SQL & Stored Procedures** — Incremental loading and MERGE operations
+- **Apache Airflow** — Batch workflow orchestration
+- **Docker** — Lambda packaging and dependency builds
+- **Git & GitHub** — Version control
+- **GitHub Actions** — CI/CD deployment
+
+
+
 
